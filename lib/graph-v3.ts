@@ -164,6 +164,10 @@ export async function runReadCypher<T = Record<string, unknown>>(
   cypher: string,
   params: Record<string, unknown> = {}
 ): Promise<KgResult<T>> {
+  if (!cypher?.trim()) {
+    return { ok: false, reason: "Cypher query cannot be empty." };
+  }
+
   const writeKw = detectWriteKeyword(cypher);
   if (writeKw) {
     return {

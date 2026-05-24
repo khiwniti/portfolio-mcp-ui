@@ -4761,7 +4761,7 @@ server.tool(
     description:
       "Execute a read-only Cypher query against the knowledge graph. Write keywords (CREATE, DELETE, MERGE, SET, REMOVE, DROP, LOAD CSV) are rejected. Use this for ad-hoc exploration — for common queries prefer the higher-level kg_* tools.",
     schema: z.object({
-      cypher: z.string().describe("Cypher query (read-only). Example: MATCH (n) RETURN labels(n) AS labels, count(*) AS count ORDER BY count DESC LIMIT 10"),
+      cypher: z.string().min(1).describe("Cypher query (read-only, non-empty). Example: MATCH (n) RETURN labels(n) AS labels, count(*) AS count ORDER BY count DESC LIMIT 10"),
       params: z
         .record(z.string(), z.any())
         .optional()
