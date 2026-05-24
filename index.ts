@@ -16,6 +16,7 @@ import {
   kgTopTechnologies,
   kgTopRepos,
 } from "./lib/graph-v3.js";
+import { getGitHubStatsCached } from "./lib/github.js";
 
 const server = new MCPServer({
   name: "portfolio-mcp-ui",
@@ -5046,6 +5047,535 @@ server.tool(
     });
   }
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SPRINT 4: JD Resume Export · GitHub Stats · Drafts Surface · KG Semantic Search
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── In-memory drafts store ────────────────────────────────────────────────────
+interface DraftDoc {
+  id: string;
+  title: string;
+  body: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+  status: "draft" | "review" | "published";
+}
+
+const draftsStore = new Map<string, DraftDoc>([
+  [
+    "draft-001",
+    {
+      id: "draft-001",
+      title: "Building a Portfolio MCP Server",
+      body: `In this post I explore how to build a fully interactive portfolio server using the Model Context Protocol (MCP) and the mcp-use SDK.
+
+MCP lets any AI assistant call structured "tools" that return rich data or interactive widgets. By building your portfolio as an MCP server, any Claude, ChatGPT, or custom LLM integration can browse your work, drill into projects, check availability, and even spin up a tailored PDF resume — all through a single protocol endpoint.
+
+Key takeaways:
+• Define tools with Zod schemas for type-safe inputs
+• Return widget() responses to render React UI in any MCP host
+• Deploy to Vercel with a single vercel.json and hono/vercel adapter`,
+      tags: ["mcp", "portfolio", "typescript", "open-source"],
+      createdAt: new Date("2025-01-10T09:00:00Z").toISOString(),
+      updatedAt: new Date("2025-01-18T14:22:00Z").toISOString(),
+      status: "review",
+    },
+  ],
+  [
+    "draft-002",
+    {
+      id: "draft-002",
+      title: "Neo4j Knowledge Graph for Developer Portfolios",
+      body: `A knowledge graph brings relational structure to what is usually unstructured portfolio data. Here is how I integrated Neo4j Aura into my MCP server.
+
+The graph schema is straightforward:
+  (Person)-[:AUTHORED]->(Repo)
+  (Repo)-[:USES]->(Technology)
+  (Person)-[:IMPLEMENTS]->(Technology)
+
+With 222k+ nodes and 241k+ relationships already loaded, every tool can now answer questions like "which repos use TypeScript and Redis together?" or "what is my depth with React vs Vue?" — all from live Cypher queries.`,
+      tags: ["neo4j", "knowledge-graph", "cypher", "mcp"],
+      createdAt: new Date("2025-02-01T11:00:00Z").toISOString(),
+      updatedAt: new Date("2025-02-05T09:45:00Z").toISOString(),
+      status: "draft",
+    },
+  ],
+]);
+
+let _draftCounter = draftsStore.size;
+
+// ── JD keyword extraction helpers ────────────────────────────────────────────
+const TECH_KWDS = new Set([
+  "typescript","javascript","python","rust","go","java","kotlin","swift","c#","c++",
+  "react","vue","angular","svelte","next.js","nextjs","nuxt","remix","solid",
+  "node","node.js","express","fastify","hono","nestjs","django","flask","fastapi","spring",
+  "postgresql","postgres","mysql","mongodb","redis","neo4j","elasticsearch","sqlite","dynamodb",
+  "docker","kubernetes","k8s","terraform","ansible","helm","github actions","circleci",
+  "aws","gcp","azure","vercel","cloudflare","lambda","s3","ec2","ecs",
+  "rest","graphql","grpc","websocket","mcp","openapi","swagger",
+  "microservices","serverless","edge","distributed","monorepo","nx","turborepo",
+  "machine learning","ml","ai","llm","openai","langchain","rag","embeddings","vector",
+  "agile","scrum","kanban","tdd","bdd","devops","sre","platform engineering",
+  "leadership","mentoring","coaching","architecture","design patterns",
+  "performance","scalability","security","accessibility","a11y","wcag",
+  "testing","jest","vitest","cypress","playwright","mocha","chai",
+  "git","github","gitlab","jira","confluence","figma",
+  "api","sdk","cli","oauth","jwt","saml","sso",
+]);
+
+function _extractJDKeywords(jd: string): string[] {
+  const lower = jd.toLowerCase();
+  const found: string[] = [];
+  for (const kw of TECH_KWDS) {
+    if (lower.includes(kw)) found.push(kw);
+  }
+  const capWords = jd.match(/\b[A-Z][a-zA-Z0-9+#.]{2,}\b/g) ?? [];
+  for (const w of capWords) {
+    const wl = w.toLowerCase();
+    if (!TECH_KWDS.has(wl) && !found.includes(wl)) found.push(wl);
+  }
+  return [...new Set(found)].slice(0, 40);
+}
+
+function _scoreSection(
+  content: string,
+  keywords: string[]
+): { score: number; matched: string[] } {
+  const lower = content.toLowerCase();
+  const matched = keywords.filter((k) => lower.includes(k));
+  const score =
+    keywords.length > 0
+      ? Math.round((matched.length / Math.min(keywords.length, 20)) * 100)
+      : 0;
+  return { score: Math.min(score, 100), matched };
+}
+
+// ── Resume fixture sections ───────────────────────────────────────────────────
+const _RESUME_SECTIONS = [
+  {
+    id: "summary",
+    title: "Professional Summary",
+    content:
+      "Full-stack software engineer with 8+ years building production systems across TypeScript, Python, and Go. Deep experience in distributed microservices, real-time APIs (REST/GraphQL/WebSocket), and cloud-native infrastructure (AWS, GCP, Vercel, Cloudflare). Proven track record leading teams of 4–12 engineers, driving agile delivery cadences, and mentoring mid-level developers into senior roles. Passionate about developer experience, knowledge graphs, and AI-augmented engineering workflows.",
+  },
+  {
+    id: "experience",
+    title: "Work Experience",
+    content: `Senior Software Engineer · Acme Corp (2021–present)
+• Architected and launched a real-time analytics platform serving 2M+ daily active users using TypeScript, Node.js, PostgreSQL, Redis, and Kubernetes on AWS EKS.
+• Led migration from monolith to domain-driven microservices; cut p99 API latency from 2.1 s to 180 ms.
+• Introduced CI/CD pipelines (GitHub Actions, ArgoCD) reducing deploy cycle from 2 weeks to same-day.
+• Mentored 5 engineers through senior promotion; ran weekly architecture reviews and TDD workshops.
+
+Software Engineer · Startup Studio (2018–2021)
+• Built multi-tenant SaaS platform in React/Next.js + FastAPI with JWT/OAuth2 authentication.
+• Designed Neo4j knowledge graph replacing brittle relational joins; query time dropped 70%.
+• Shipped mobile-first PWA (Lighthouse 98+) handling 500k monthly users.
+
+Junior Developer · Agency XYZ (2016–2018)
+• Developed React SPAs and Node.js REST APIs for 12 client projects.
+• Integrated Stripe, Twilio, and Sendgrid; delivered on-time for 100% of engagements.`,
+  },
+  {
+    id: "skills",
+    title: "Technical Skills",
+    content: `Languages: TypeScript, JavaScript (ES2024), Python, Go, Rust, SQL
+Frontend: React, Next.js, Vue 3, Svelte, React Native, Tailwind CSS
+Backend: Node.js, Express, Fastify, Hono, NestJS, FastAPI, Django
+Databases: PostgreSQL, MySQL, MongoDB, Redis, Neo4j, Elasticsearch, SQLite
+Cloud & DevOps: AWS (Lambda, EC2, ECS, S3, RDS), GCP, Vercel, Cloudflare Workers, Docker, Kubernetes, Terraform
+Testing: Jest, Vitest, Playwright, Cypress, Testing Library
+Architecture: Microservices, Serverless, Event-driven, CQRS, DDD, REST, GraphQL, gRPC, MCP
+AI/ML: OpenAI API, LangChain, RAG pipelines, vector embeddings, Neo4j GDS`,
+  },
+  {
+    id: "projects",
+    title: "Selected Projects",
+    content: `Portfolio MCP UI (Open Source)
+Interactive portfolio served as an MCP server — any AI assistant can browse sections, search skills, and export tailored resumes via tool calls. Built with mcp-use SDK, React widgets, Neo4j knowledge graph, and Vercel edge deployment.
+Tech: TypeScript, Hono, React, Neo4j, Zod, GitHub Actions
+
+Real-Time Collaboration Platform
+WebSocket-based collaborative editor with CRDT conflict resolution, supporting 10k concurrent users. Deployed on AWS ECS Fargate with auto-scaling Redis clusters.
+Tech: TypeScript, Node.js, Redis Streams, PostgreSQL, React, Docker, Kubernetes
+
+AI-Powered Code Review Bot
+GitHub App that analyzes PRs using LLM embeddings + Neo4j graph traversal to flag architectural drift and suggest refactors. Processes 500+ PRs/day.
+Tech: Python, FastAPI, OpenAI API, Neo4j, GitHub Actions, Vercel`,
+  },
+  {
+    id: "oss",
+    title: "Open Source & Community",
+    content: `• Portfolio MCP UI — 800+ GitHub stars; featured on Hacker News front page (2025)
+• Contributor to mcp-use SDK — added TypeScript strict mode and widget autoSize docs
+• Technical blog: 12 posts on Neo4j, TypeScript, and distributed systems (avg 8k reads)
+• Conference talks: NodeConf EU 2024 "Knowledge Graphs for Developer Portfolios"; MCP Summit 2025
+• Mentor at local bootcamp; 18 mentees placed in engineering roles`,
+  },
+  {
+    id: "education",
+    title: "Education",
+    content: `B.Sc. Computer Science · Chulalongkorn University (2012–2016)
+Graduated with First Class Honours. Thesis: "Graph-based Similarity Search in Large-Scale Code Repositories."
+
+Certifications:
+• AWS Certified Solutions Architect – Professional
+• Google Cloud Professional Data Engineer
+• Neo4j Certified Professional`,
+  },
+];
+
+// ── get_resume_pdf ────────────────────────────────────────────────────────────
+server.tool(
+  {
+    name: "get_resume_pdf",
+    description:
+      "Generate a print-ready, JD-tailored resume with keyword match scoring. Each section is scored against the job description and matched keywords are highlighted. Use the Print / Save PDF button in the widget to export.",
+    schema: z.object({
+      jobDescription: z
+        .string()
+        .min(10)
+        .describe("Full job description text to score the resume against"),
+      candidateName: z
+        .string()
+        .optional()
+        .describe("Candidate full name override (defaults to portfolio owner)"),
+      email: z.string().optional().describe("Contact email override"),
+      phone: z.string().optional().describe("Phone number override"),
+      location: z.string().optional().describe("Location override"),
+      website: z.string().optional().describe("Personal website or portfolio URL override"),
+      linkedIn: z.string().optional().describe("LinkedIn profile URL override"),
+      github: z.string().optional().describe("GitHub profile URL override"),
+    }),
+    widget: {
+      name: "resume-export",
+      invoking: "Scoring resume against job description...",
+      invoked: "Tailored resume ready — click Print / Save PDF",
+    },
+  },
+  async ({ jobDescription, candidateName, email, phone, location, website, linkedIn, github }) => {
+    const keywords = _extractJDKeywords(jobDescription);
+    const scoredSections = _RESUME_SECTIONS.map((sec) => {
+      const { score, matched } = _scoreSection(sec.content, keywords);
+      return { id: sec.id, title: sec.title, score, matched, content: sec.content };
+    });
+
+    const allMatched = [...new Set(scoredSections.flatMap((s) => s.matched))];
+    const allMissed = keywords.filter((k) => !allMatched.includes(k)).slice(0, 20);
+    const overallScore = Math.round(
+      scoredSections.reduce((sum, s) => sum + s.score, 0) / scoredSections.length
+    );
+
+    return widget({
+      props: {
+        candidateName: candidateName ?? "Khiwniti Boonprakong",
+        email: email ?? "hello@portfolio.dev",
+        phone: phone ?? "+66 81 234 5678",
+        location: location ?? "Bangkok, Thailand (Remote-ready)",
+        website: website ?? "https://portfolio.mcp-use.com",
+        linkedIn: linkedIn,
+        github: github ?? "github.com/khiwniti",
+        jdSnippet: jobDescription.slice(0, 600),
+        matchScore: overallScore,
+        matchedKeywords: allMatched,
+        missedKeywords: allMissed,
+        sections: scoredSections,
+        generatedAt: new Date().toISOString(),
+      },
+      output: text(
+        `Resume tailored for job posting.\n` +
+          `Overall match score: ${overallScore}%\n` +
+          `Matched keywords (${allMatched.length}): ${allMatched.slice(0, 10).join(", ")}${allMatched.length > 10 ? "..." : ""}\n` +
+          `Gap keywords (${allMissed.length}): ${allMissed.slice(0, 6).join(", ")}${allMissed.length > 6 ? "..." : ""}`
+      ),
+    });
+  }
+);
+
+// ── get_github_stats ──────────────────────────────────────────────────────────
+server.tool(
+  {
+    name: "get_github_stats",
+    description:
+      "Fetch live GitHub profile statistics — repo count, language breakdown, top starred projects, follower counts, and recent activity. Results are cached for 15 minutes. Defaults to the portfolio owner's GitHub handle.",
+    schema: z.object({
+      username: z
+        .string()
+        .optional()
+        .describe(
+          "GitHub username to look up (defaults to GITHUB_USERNAME env var or portfolio owner)"
+        ),
+    }),
+    widget: {
+      name: "github-stats",
+      invoking: "Fetching GitHub statistics...",
+      invoked: "GitHub profile loaded",
+    },
+  },
+  async ({ username }) => {
+    const handle = username ?? process.env.GITHUB_USERNAME ?? "khiwniti";
+    const result = await getGitHubStatsCached(handle);
+
+    if (!result.ok) {
+      return error(`GitHub fetch failed for "@${handle}": ${result.reason}`);
+    }
+
+    const { data } = result;
+    return widget({
+      props: {
+        username: handle,
+        user: data.user,
+        aggregate: data.aggregate,
+        languages: data.languages,
+        topRepos: data.topRepos,
+        fetchedAt: data.fetchedAt,
+      },
+      output: text(
+        `GitHub stats for @${handle}:\n` +
+          `${data.aggregate.originalRepos} original repos · ${data.aggregate.totalStars} total stars · ` +
+          `${data.user.followers} followers\n` +
+          `Top languages: ${data.languages
+            .slice(0, 5)
+            .map((l) => l.language)
+            .join(", ")}`
+      ),
+    });
+  }
+);
+
+// ── get_drafts ────────────────────────────────────────────────────────────────
+server.tool(
+  {
+    name: "get_drafts",
+    description:
+      "Display the private content drafts surface. Lists all drafts with status, tags, and a side-by-side preview. New drafts can be created directly from the widget. Protected by DRAFTS_API_KEY env var — omit the key in development to bypass.",
+    schema: z.object({
+      apiKey: z
+        .string()
+        .optional()
+        .describe("API key matching the DRAFTS_API_KEY environment variable"),
+    }),
+    widget: {
+      name: "drafts-surface",
+      invoking: "Loading drafts...",
+      invoked: "Drafts surface ready",
+    },
+  },
+  async ({ apiKey }) => {
+    const requiredKey = process.env.DRAFTS_API_KEY;
+    const authenticated = !requiredKey || apiKey === requiredKey;
+
+    if (!authenticated) {
+      return widget({
+        props: {
+          authenticated: false,
+          authMessage:
+            "A valid DRAFTS_API_KEY is required to access drafts. Pass it as the apiKey parameter.",
+          drafts: [],
+          totalCount: 0,
+          authProvider: "API Key",
+        },
+        output: text("Access denied: authentication required to view drafts."),
+      });
+    }
+
+    const drafts = Array.from(draftsStore.values()).sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+
+    return widget({
+      props: {
+        authenticated: true,
+        drafts,
+        totalCount: drafts.length,
+      },
+      output: text(`Showing ${drafts.length} draft${drafts.length !== 1 ? "s" : ""}.`),
+    });
+  }
+);
+
+// ── save_draft ────────────────────────────────────────────────────────────────
+server.tool(
+  {
+    name: "save_draft",
+    description:
+      "Create or update a content draft in the in-memory store. Called programmatically from the drafts widget when the user submits the new-draft form.",
+    schema: z.object({
+      id: z.string().optional().describe("Draft ID to update; omit to create a new draft"),
+      title: z.string().min(1).describe("Draft title"),
+      body: z.string().describe("Draft body / content"),
+      tags: z.array(z.string()).optional().describe("Comma-split tags for the draft"),
+      status: z
+        .enum(["draft", "review", "published"])
+        .optional()
+        .describe("Publication status of the draft"),
+    }),
+  },
+  async ({ id, title, body, tags, status }) => {
+    const now = new Date().toISOString();
+
+    if (id && draftsStore.has(id)) {
+      const existing = draftsStore.get(id)!;
+      draftsStore.set(id, {
+        ...existing,
+        title,
+        body,
+        tags: tags ?? existing.tags,
+        status: status ?? existing.status,
+        updatedAt: now,
+      });
+      return text(`Draft "${title}" updated (id: ${id}).`);
+    }
+
+    _draftCounter += 1;
+    const newId = id ?? `draft-${String(_draftCounter).padStart(3, "0")}`;
+    draftsStore.set(newId, {
+      id: newId,
+      title,
+      body,
+      tags: tags ?? [],
+      status: status ?? "draft",
+      createdAt: now,
+      updatedAt: now,
+    });
+    return text(`Draft "${title}" created (id: ${newId}).`);
+  }
+);
+
+// ── kg_semantic_search ────────────────────────────────────────────────────────
+server.tool(
+  {
+    name: "kg_semantic_search",
+    description:
+      "Search the portfolio knowledge graph using full-text or substring matching. Finds Technology, Repo, and Person nodes matching the query. Attempts the Neo4j full-text index first; falls back to CONTAINS substring search automatically.",
+    schema: z.object({
+      query: z.string().min(1).describe("Search query — natural language keywords or a tech name"),
+      labels: z
+        .array(z.string())
+        .optional()
+        .describe("Filter to specific node labels: Technology, Repo, Person (defaults to all)"),
+      limit: z
+        .number()
+        .min(1)
+        .max(50)
+        .optional()
+        .describe("Maximum number of results to return (default 20)"),
+    }),
+    widget: {
+      name: "kg-search-results",
+      invoking: "Searching knowledge graph...",
+      invoked: "Search complete",
+    },
+  },
+  async ({ query, labels, limit }) => {
+    const cap = limit ?? 20;
+    const safeLabels = (labels ?? []).filter((l) => /^[A-Za-z0-9_]+$/.test(l));
+    const labelClause =
+      safeLabels.length > 0
+        ? "AND any(label IN labels(n) WHERE label IN $labelList)"
+        : "";
+
+    const start = Date.now();
+    let searchMode: "fulltext" | "substring" = "fulltext";
+
+    // Attempt full-text index ("portfolioSearch") first
+    const fulltextCypher = `
+      CALL db.index.fulltext.queryNodes("portfolioSearch", $q, {limit: $cap})
+      YIELD node AS n, score
+      WHERE true ${labelClause}
+      RETURN
+        labels(n)                                                    AS labels,
+        coalesce(n.name, n.title, n.login, toString(id(n)))          AS title,
+        coalesce(n.description, n.bio, n.summary, "")                AS snippet,
+        score,
+        elementId(n)                                                 AS elementId,
+        coalesce(n.url, n.html_url, n.website, "")                   AS url
+      ORDER BY score DESC
+      LIMIT $cap
+    `;
+
+    let result = await runReadCypher(fulltextCypher, {
+      q: query,
+      cap,
+      ...(safeLabels.length > 0 ? { labelList: safeLabels } : {}),
+    });
+
+    if (!result.ok) {
+      // Fall back to substring CONTAINS search
+      searchMode = "substring";
+      const substringCypher = `
+        MATCH (n)
+        WHERE (
+          toLower(coalesce(n.name, ""))        CONTAINS toLower($q) OR
+          toLower(coalesce(n.title, ""))       CONTAINS toLower($q) OR
+          toLower(coalesce(n.description, "")) CONTAINS toLower($q) OR
+          toLower(coalesce(n.login, ""))       CONTAINS toLower($q)
+        )
+        ${safeLabels.length > 0 ? "AND any(label IN labels(n) WHERE label IN $labelList)" : ""}
+        RETURN
+          labels(n)                                                  AS labels,
+          coalesce(n.name, n.title, n.login, toString(id(n)))        AS title,
+          coalesce(n.description, n.bio, n.summary, "")              AS snippet,
+          null                                                       AS score,
+          elementId(n)                                               AS elementId,
+          coalesce(n.url, n.html_url, n.website, "")                 AS url
+        LIMIT $cap
+      `;
+      result = await runReadCypher(substringCypher, {
+        q: query,
+        cap,
+        ...(safeLabels.length > 0 ? { labelList: safeLabels } : {}),
+      });
+    }
+
+    const tookMs = Date.now() - start;
+
+    if (!result.ok) return error(`KG search failed: ${result.reason}`);
+
+    const results = (result.records ?? []).map((r: Record<string, unknown>) => ({
+      labels: Array.isArray(r.labels) ? (r.labels as string[]) : [],
+      title:
+        typeof r.title === "string" ? r.title : String(r.title ?? ""),
+      snippet:
+        typeof r.snippet === "string" && r.snippet
+          ? r.snippet.slice(0, 200)
+          : undefined,
+      score:
+        typeof r.score === "number"
+          ? Math.round(r.score * 100) / 100
+          : undefined,
+      elementId:
+        typeof r.elementId === "string" ? r.elementId : undefined,
+      url:
+        typeof r.url === "string" && r.url ? r.url : undefined,
+    }));
+
+    return widget({
+      props: {
+        query,
+        results,
+        resultCount: results.length,
+        searchMode,
+        tookMs,
+        searchLabels: safeLabels,
+        vectorEnabled: false,
+      },
+      output: text(
+        `KG search "${query}" (${searchMode}): ${results.length} result${results.length !== 1 ? "s" : ""} in ${tookMs} ms.\n` +
+          results
+            .slice(0, 5)
+            .map((r) => `• [${r.labels.join("/")}] ${r.title}`)
+            .join("\n")
+      ),
+    });
+  }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SERVER LIFECYCLE
+// ─────────────────────────────────────────────────────────────────────────────
 
 // On a long-running host (local dev, mcp-use start, Manufact Cloud, Docker, etc.)
 // we bind to a port. On Vercel — where api/index.ts wraps `server.app` with
