@@ -1,5 +1,21 @@
 import { MCPServer, widget, text, error, object } from "mcp-use/server";
 import { z } from "zod";
+import {
+  runReadCypher,
+  kgSchemaSummary,
+  kgPing,
+  kgConfigured,
+  kgDatabase,
+  kgInstanceName,
+  kgUri,
+  kgLookupTechnology,
+  kgReposUsingTechnology,
+  kgLookupRepo,
+  kgTechStackForRepo,
+  kgPersonSummary,
+  kgTopTechnologies,
+  kgTopRepos,
+} from "./lib/graph-v3.js";
 
 const server = new MCPServer({
   name: "portfolio-mcp-ui",
@@ -2449,13 +2465,22 @@ server.tool(
         ? skillsData.skills.filter((s) => s.category === category)
         : skillsData.skills;
 
+    // KG enrichment — top technologies by repo count for the live badge
+    let liveTechRankings: { slug: string; label: string; reposUsing: number }[] | undefined;
+    const techRanks = await kgTopTechnologies(60);
+    if (techRanks.ok && techRanks.data?.length) {
+      liveTechRankings = techRanks.data;
+    }
+
     return widget({
       props: {
         categories: skillsData.categories,
         skills: filtered,
+        liveTechRankings,
       },
       output: text(
-        `${filtered.length} skills${category ? ` in ${category}` : ""}. Categories: ${skillsData.categories.join(", ")}.`
+        `${filtered.length} skills${category ? ` in ${category}` : ""}. Categories: ${skillsData.categories.join(", ")}.` +
+          (liveTechRankings ? ` Live graph: ${liveTechRankings.length} technologies indexed.` : "")
       ),
     });
   }
@@ -2522,12 +2547,32 @@ server.tool(
         )
       : projectsData.projects;
 
+    // KG enrichment — person summary for live repo/deployment counts
+    let liveStats:
+      | {
+          reposAuthored: number;
+          deploymentsOwned: number;
+          topLanguages: { language: string; repoCount: number }[];
+        }
+      | undefined;
+    const personRes = await kgPersonSummary();
+    if (personRes.ok && personRes.data) {
+      liveStats = {
+        reposAuthored: personRes.data.reposAuthored,
+        deploymentsOwned: personRes.data.deploymentsOwned,
+        topLanguages: personRes.data.topLanguages,
+      };
+    }
+
     return widget({
-      props: { projects },
+      props: { projects, liveStats },
       output: text(
         `${projects.length} projects${tag ? ` tagged "${tag}"` : ""}. Live: ${
           projects.filter((p) => p.status === "live").length
-        }.`
+        }.` +
+          (liveStats
+            ? ` Graph: ${liveStats.reposAuthored} repos, ${liveStats.deploymentsOwned} deployments indexed.`
+            : "")
       ),
     });
   }
@@ -2682,6 +2727,46 @@ server.tool(
       .filter((s) => s.category === skill.category && s.name !== skill.name)
       .map((s) => s.name);
 
+    // KG enrichment — corroborate the skill with real repos that USE the
+    // matching Technology node. Degrades gracefully if Neo4j is unreachable.
+    let liveEvidence: {
+      source: "kg";
+      slug: string;
+      label: string;
+      confidence: number;
+      reposUsing: number;
+      sampleRepos: {
+        label: string;
+        url: string;
+        description?: string;
+        language?: string;
+      }[];
+      tookMs: number;
+    } | null = null;
+    try {
+      const techLookup = await kgLookupTechnology(skill.name);
+      if (techLookup.ok && techLookup.data) {
+        const reposResult = await kgReposUsingTechnology(techLookup.data.slug, 8);
+        liveEvidence = {
+          source: "kg",
+          slug: techLookup.data.slug,
+          label: techLookup.data.label,
+          confidence: techLookup.data.confidence,
+          reposUsing: techLookup.data.reposUsing,
+          sampleRepos: (reposResult.ok ? reposResult.data ?? [] : []).map((r) => ({
+            label: r.label,
+            url: r.url,
+            description: r.description,
+            language: r.language,
+          })),
+          tookMs:
+            (techLookup.tookMs ?? 0) + (reposResult.ok ? reposResult.tookMs ?? 0 : 0),
+        };
+      }
+    } catch {
+      // Silent fallback — fixture data is still returned below.
+    }
+
     return widget({
       props: {
         name: skill.name,
@@ -2694,10 +2779,13 @@ server.tool(
         relatedRoles: rolesToSummary(enr.relatedRoleIds),
         relatedProjects: projectsToSummary(enr.relatedProjectIds),
         siblingSkills: siblings,
+        liveEvidence,
         breadcrumb: ["Skills", skill.category, skill.name],
       },
       output: text(
-        `${skill.name} — ${skill.level}, ${skill.years}y. ${skill.evidence.length} evidence items.`
+        `${skill.name} — ${skill.level}, ${skill.years}y. ${skill.evidence.length} evidence items.${
+          liveEvidence ? ` Live graph: ${liveEvidence.reposUsing} repos use this.` : ""
+        }`
       ),
     });
   }
@@ -2823,6 +2911,49 @@ server.tool(
       .filter((p) => p.id !== project!.id)
       .map((p) => ({ id: p.id, name: p.name, summary: p.summary }));
 
+    // KG enrichment — find the matching Repo in the live graph and pull its
+    // actual technology stack. Degrades gracefully on failure.
+    let liveRepo: {
+      source: "kg";
+      slug: string;
+      label: string;
+      url: string;
+      description?: string;
+      language?: string;
+      languages?: string[];
+      techCount: number;
+      techStack: { slug: string; label: string }[];
+      tookMs: number;
+    } | null = null;
+    try {
+      // Look up by project name first, then by id as a fallback.
+      const repoLookup =
+        (await kgLookupRepo(project.name)).ok
+          ? await kgLookupRepo(project.name)
+          : await kgLookupRepo(project.id);
+      if (repoLookup.ok && repoLookup.data) {
+        const techResult = await kgTechStackForRepo(repoLookup.data.slug, 20);
+        liveRepo = {
+          source: "kg",
+          slug: repoLookup.data.slug,
+          label: repoLookup.data.label,
+          url: repoLookup.data.url,
+          description: repoLookup.data.description,
+          language: repoLookup.data.language,
+          languages: repoLookup.data.languages,
+          techCount: repoLookup.data.techCount,
+          techStack: (techResult.ok ? techResult.data ?? [] : []).map((t) => ({
+            slug: t.slug,
+            label: t.label,
+          })),
+          tookMs:
+            (repoLookup.tookMs ?? 0) + (techResult.ok ? techResult.tookMs ?? 0 : 0),
+        };
+      }
+    } catch {
+      // Silent — fixture stack still flows.
+    }
+
     return widget({
       props: {
         id: project.id,
@@ -2839,10 +2970,13 @@ server.tool(
         changelog: enr.changelog,
         relatedRoles: rolesToSummary(enr.relatedRoleIds),
         siblingProjects: siblings,
+        liveRepo,
         breadcrumb: ["Projects", project.name],
       },
       output: text(
-        `${project.name} (${project.status}). ${project.summary} Tech: ${enr.tech.join(", ")}.`
+        `${project.name} (${project.status}). ${project.summary} Tech: ${enr.tech.join(", ")}.${
+          liveRepo ? ` Live graph: ${liveRepo.techCount} technologies in ${liveRepo.label}.` : ""
+        }`
       ),
     });
   }
@@ -3144,7 +3278,7 @@ server.tool(
   {
     name: "get_hero_stats",
     description:
-      "Render the career-stats card — career-summary numbers (years, companies, launches, OSS stars, weekly downloads, mentees, RFCs) plus top languages by tenure.",
+      "Render the career-stats card — career-summary numbers (years, companies, launches, OSS stars, weekly downloads, mentees, RFCs) plus top languages by tenure. When the Neo4j knowledge graph is configured, a 'Live graph' panel is also returned summarising the Person node (repos authored, deployments owned, conversations, top languages aggregated from real repos).",
     schema: z.object({}),
     widget: {
       name: "hero-stats",
@@ -3152,16 +3286,51 @@ server.tool(
       invoked: "Stats loaded",
     },
   },
-  async () =>
-    widget({
+  async () => {
+    // KG enrichment — pull live Person summary from the graph.
+    // Degrades gracefully to the fixture-only response if KG is not configured
+    // or the query fails.
+    let liveSummary: {
+      source: "kg";
+      label: string;
+      reposAuthored: number;
+      deploymentsOwned: number;
+      conversationsAuthored: number;
+      topLanguages: { language: string; repoCount: number }[];
+      tookMs?: number;
+    } | null = null;
+    try {
+      const person = await kgPersonSummary();
+      if (person.ok && person.data) {
+        liveSummary = {
+          source: "kg",
+          label: person.data.label,
+          reposAuthored: person.data.reposAuthored,
+          deploymentsOwned: person.data.deploymentsOwned,
+          conversationsAuthored: person.data.conversationsAuthored,
+          topLanguages: person.data.topLanguages ?? [],
+          tookMs: person.tookMs,
+        };
+      }
+    } catch {
+      // Silent fallback — fixture stats still flow.
+    }
+
+    return widget({
       props: {
         breadcrumb: ["Hero", "Career at a glance"],
         ...heroStatsData,
+        liveSummary,
       },
       output: text(
-        `Career stats: ${heroStatsData.yearsExperience}+ years, ${heroStatsData.companies} companies, ${heroStatsData.productionLaunches} launches, ${heroStatsData.ossStarsTotal.toLocaleString()} OSS stars.`
+        `Career stats: ${heroStatsData.yearsExperience}+ years, ${heroStatsData.companies} companies, ${heroStatsData.productionLaunches} launches, ${heroStatsData.ossStarsTotal.toLocaleString()} OSS stars.${
+          liveSummary
+            ? ` Live graph: ${liveSummary.reposAuthored} authored repos, ${liveSummary.deploymentsOwned} deployments.`
+            : ""
+        }`
       ),
-    })
+    });
+  }
 );
 
 server.tool(
@@ -3194,6 +3363,47 @@ server.tool(
       );
     }
     const stat = languageStats[key];
+
+    // KG enrichment — corroborate language with real repos that USE the
+    // matching Technology node. Degrades gracefully if Neo4j is unreachable.
+    let liveEvidence: {
+      source: "kg";
+      slug: string;
+      label: string;
+      confidence: number;
+      reposUsing: number;
+      sampleRepos: {
+        label: string;
+        url?: string;
+        description?: string;
+        language?: string;
+      }[];
+      tookMs?: number;
+    } | null = null;
+    try {
+      const techLookup = await kgLookupTechnology(stat.name);
+      if (techLookup.ok && techLookup.data) {
+        const reposResult = await kgReposUsingTechnology(techLookup.data.slug, 8);
+        liveEvidence = {
+          source: "kg",
+          slug: techLookup.data.slug,
+          label: techLookup.data.label,
+          confidence: techLookup.data.confidence,
+          reposUsing: techLookup.data.reposUsing,
+          sampleRepos: (reposResult.ok ? reposResult.data ?? [] : []).map((r) => ({
+            label: r.label,
+            url: r.url,
+            description: r.description,
+            language: r.language,
+          })),
+          tookMs:
+            (techLookup.tookMs ?? 0) + (reposResult.ok ? reposResult.tookMs ?? 0 : 0),
+        };
+      }
+    } catch {
+      // Silent fallback — fixture stats still flow.
+    }
+
     return widget({
       props: {
         breadcrumb: ["Skills", "Languages", stat.name],
@@ -3212,9 +3422,12 @@ server.tool(
         signature: stat.signature,
         sampleSnippet: stat.sampleSnippet,
         benchmarks: stat.benchmarks,
+        liveEvidence,
       },
       output: text(
-        `${stat.name} — ${stat.proficiencyLabel}. ${stat.yearsActive}y, ${stat.totalLoc} LOC, ${stat.reposActive} active repos. Frameworks: ${stat.topFrameworks.join(", ")}.`
+        `${stat.name} — ${stat.proficiencyLabel}. ${stat.yearsActive}y, ${stat.totalLoc} LOC, ${stat.reposActive} active repos. Frameworks: ${stat.topFrameworks.join(", ")}.${
+          liveEvidence ? ` Live graph: ${liveEvidence.reposUsing} repos use this.` : ""
+        }`
       ),
     });
   }
@@ -3384,6 +3597,15 @@ server.tool(
     if (!ts) {
       return error(`No tech-stack enrichment for project "${id}".`);
     }
+    // KG enrichment — live tech stack from graph for this repo
+    let liveTechStack:
+      | { slug: string; label: string; confidence: number }[]
+      | undefined;
+    const tsRes = await kgTechStackForRepo(project.id);
+    if (tsRes.ok && tsRes.data?.length) {
+      liveTechStack = tsRes.data;
+    }
+
     return widget({
       props: {
         breadcrumb: ["Projects", project.name, "Tech stack"],
@@ -3394,9 +3616,11 @@ server.tool(
         layers: ts.layers,
         modules: ts.modules,
         notableLibs: ts.notableLibs,
+        liveTechStack,
       },
       output: text(
-        `${project.name} tech stack — ${ts.languages.length} languages (primary: ${ts.languages.find((l) => l.primary)?.name ?? ts.languages[0].name}), ${ts.layers.length} layers, ${ts.modules.length} modules.`
+        `${project.name} tech stack — ${ts.languages.length} languages (primary: ${ts.languages.find((l) => l.primary)?.name ?? ts.languages[0].name}), ${ts.layers.length} layers, ${ts.modules.length} modules.` +
+          (liveTechStack ? ` Graph: ${liveTechStack.length} technologies indexed.` : "")
       ),
     });
   }
@@ -3581,8 +3805,25 @@ server.tool(
       invoked: "Open source loaded",
     },
   },
-  async () =>
-    widget({
+  async () => {
+    // KG enrichment — person summary for live repo count + top repos list
+    let liveRepoCount: number | undefined;
+    let liveTopRepos:
+      | { slug: string; label: string; url: string; language: string | null; techCount: number }[]
+      | undefined;
+
+    const [personRes, topReposRes] = await Promise.all([
+      kgPersonSummary(),
+      kgTopRepos(10),
+    ]);
+    if (personRes.ok && personRes.data) {
+      liveRepoCount = personRes.data.reposAuthored;
+    }
+    if (topReposRes.ok && topReposRes.data?.length) {
+      liveTopRepos = topReposRes.data;
+    }
+
+    return widget({
       props: {
         breadcrumb: ["Open source"],
         summary: openSourceData.summary,
@@ -3597,11 +3838,17 @@ server.tool(
           mergedAt: c.mergedAt,
           description: c.description,
         })),
+        liveRepoCount,
+        liveTopRepos,
       },
       output: text(
-        `Open source: ${openSourceData.totalStars.toLocaleString()} stars, ${openSourceData.totalContributions} contributions, ${openSourceData.maintainedRepos} maintained repos.`
+        `Open source: ${openSourceData.totalStars.toLocaleString()} stars, ${openSourceData.totalContributions} contributions, ${openSourceData.maintainedRepos} maintained repos.` +
+          (liveRepoCount !== undefined
+            ? ` Graph: ${liveRepoCount} repos indexed.`
+            : "")
       ),
-    })
+    });
+  }
 );
 
 server.tool(
@@ -4020,6 +4267,25 @@ server.tool(
     schema: z.object({}),
   },
   async () => {
+    // KG enrichment — live graph stats from person summary
+    let liveGraphStats:
+      | {
+          reposAuthored: number;
+          deploymentsOwned: number;
+          conversationsAuthored: number;
+          topLanguages: { language: string; repoCount: number }[];
+        }
+      | undefined;
+    const personRes = await kgPersonSummary();
+    if (personRes.ok && personRes.data) {
+      liveGraphStats = {
+        reposAuthored: personRes.data.reposAuthored,
+        deploymentsOwned: personRes.data.deploymentsOwned,
+        conversationsAuthored: personRes.data.conversationsAuthored,
+        topLanguages: personRes.data.topLanguages,
+      };
+    }
+
     return widget({
       props: {
         career: portfolioStatsData.career,
@@ -4028,9 +4294,13 @@ server.tool(
         openSource: portfolioStatsData.openSource,
         achievements: portfolioStatsData.achievements,
         education: portfolioStatsData.education,
+        liveGraphStats,
       },
       output: text(
-        `${portfolioStatsData.career.yearsOfExperience} years | ${portfolioStatsData.projects.totalProjects} projects | ${portfolioStatsData.openSource.totalStars}+ OSS stars`
+        `${portfolioStatsData.career.yearsOfExperience} years | ${portfolioStatsData.projects.totalProjects} projects | ${portfolioStatsData.openSource.totalStars}+ OSS stars` +
+          (liveGraphStats
+            ? ` | Graph: ${liveGraphStats.reposAuthored} repos, ${liveGraphStats.deploymentsOwned} deployments`
+            : "")
       ),
     });
   }
@@ -4327,6 +4597,453 @@ server.tool(
     console.log(`[Analytics] ${JSON.stringify(event)}`);
 
     return text(`Event tracked: ${eventName}${section ? ` (${section})` : ""}`);
+  }
+);
+
+/* ------------------------------------------------------------------ */
+/* Knowledge Graph tools (Neo4j Aura)                                  */
+/* ------------------------------------------------------------------ */
+/*
+ * These 6 tools query the live Neo4j knowledge graph that the separate
+ * Python ingestion pipeline populates (Person, Skill, Repository, File,
+ * Function, Class, Project, Deployment, Document, Concept nodes with
+ * HAS_SKILL, USES, DEPENDS_ON, DEPLOYS_TO, DEFINES, CALLS, DOCUMENTS
+ * relationships).
+ *
+ * All queries run in READ access mode against the configured database.
+ * If credentials are missing or the graph is empty the tools degrade
+ * gracefully — the 36 fixture-backed portfolio tools are unaffected.
+ */
+
+/* Tool 1: kg_health — connection status + node/relationship totals */
+server.tool(
+  {
+    name: "kg_health",
+    description:
+      "Knowledge graph health check. Returns a dashboard widget showing connection status to the Neo4j Aura instance, total node and relationship counts, and a breakdown by label and relationship type. Call this first to confirm the graph is reachable.",
+    schema: z.object({}),
+    widget: {
+      name: "kg-overview",
+      invoking: "Checking knowledge graph...",
+      invoked: "Knowledge graph status",
+    },
+  },
+  async () => {
+    const generatedAt = new Date().toISOString();
+    const database = kgDatabase();
+    const instanceName = kgInstanceName();
+    const uri = kgUri();
+
+    if (!kgConfigured()) {
+      return widget({
+        props: {
+          breadcrumb: ["Knowledge Graph", "Health"],
+          connected: false,
+          database,
+          instanceName,
+          uri,
+          totalNodes: 0,
+          totalRelationships: 0,
+          labels: [],
+          relationshipTypes: [],
+          reason:
+            "Neo4j credentials missing. Set NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD.",
+          generatedAt,
+        },
+        output: text("Knowledge graph not configured."),
+      });
+    }
+
+    const ping = await kgPing();
+    if (!ping.ok) {
+      return widget({
+        props: {
+          breadcrumb: ["Knowledge Graph", "Health"],
+          connected: false,
+          database,
+          instanceName,
+          uri,
+          totalNodes: 0,
+          totalRelationships: 0,
+          labels: [],
+          relationshipTypes: [],
+          reason: ping.reason ?? "Unknown driver error",
+          generatedAt,
+        },
+        output: text(`Knowledge graph unreachable: ${ping.reason ?? "unknown error"}`),
+      });
+    }
+
+    const schema = await kgSchemaSummary();
+    const labels =
+      schema.ok && Array.isArray((schema.records?.[0] as any)?.labels)
+        ? ((schema.records?.[0] as any).labels as { label: string; count: number }[])
+        : [];
+    const relationshipTypes =
+      schema.ok && Array.isArray((schema.records?.[0] as any)?.relationshipTypes)
+        ? ((schema.records?.[0] as any).relationshipTypes as { type: string; count: number }[])
+        : [];
+
+    const totalNodes = labels.reduce((sum, l) => sum + (Number(l.count) || 0), 0);
+    const totalRelationships = relationshipTypes.reduce(
+      (sum, r) => sum + (Number(r.count) || 0),
+      0
+    );
+
+    return widget({
+      props: {
+        breadcrumb: ["Knowledge Graph", "Health"],
+        connected: true,
+        database,
+        instanceName,
+        uri,
+        pingMs: ping.meta?.tookMs,
+        totalNodes,
+        totalRelationships,
+        labels: labels.sort((a, b) => b.count - a.count),
+        relationshipTypes: relationshipTypes.sort((a, b) => b.count - a.count),
+        generatedAt,
+      },
+      output: object({
+        connected: true,
+        database,
+        instanceName,
+        totalNodes,
+        totalRelationships,
+        labelCount: labels.length,
+        relationshipTypeCount: relationshipTypes.length,
+        pingMs: ping.meta?.tookMs,
+        labels,
+        relationshipTypes,
+      }),
+    });
+  }
+);
+
+/* Tool 2: kg_schema — labels, relationship types, property keys */
+server.tool(
+  {
+    name: "kg_schema",
+    description:
+      "Returns the knowledge graph schema as structured data: node labels, relationship types, and property keys. Useful for understanding what queries are possible against the graph.",
+    schema: z.object({}),
+  },
+  async () => {
+    const [schema, propKeys] = await Promise.all([
+      kgSchemaSummary(),
+      runReadCypher<{ key: string }>("CALL db.propertyKeys() YIELD propertyKey AS key RETURN key"),
+    ]);
+
+    if (!schema.ok) return error(`Schema query failed: ${schema.reason}`);
+
+    const row = (schema.records?.[0] ?? {}) as {
+      labels?: { label: string; count: number }[];
+      relationshipTypes?: { type: string; count: number }[];
+    };
+
+    return object({
+      database: kgDatabase(),
+      instanceName: kgInstanceName(),
+      labels: row.labels ?? [],
+      relationshipTypes: row.relationshipTypes ?? [],
+      propertyKeys: propKeys.ok
+        ? (propKeys.records ?? []).map((r) => r.key).sort()
+        : [],
+      tookMs: schema.meta?.tookMs ?? 0,
+    });
+  }
+);
+
+/* Tool 3: kg_query — execute read-only Cypher */
+server.tool(
+  {
+    name: "kg_query",
+    description:
+      "Execute a read-only Cypher query against the knowledge graph. Write keywords (CREATE, DELETE, MERGE, SET, REMOVE, DROP, LOAD CSV) are rejected. Use this for ad-hoc exploration — for common queries prefer the higher-level kg_* tools.",
+    schema: z.object({
+      cypher: z.string().describe("Cypher query (read-only). Example: MATCH (n) RETURN labels(n) AS labels, count(*) AS count ORDER BY count DESC LIMIT 10"),
+      params: z
+        .record(z.string(), z.any())
+        .optional()
+        .describe("Optional query parameters bound as $name in the Cypher string."),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .max(500)
+        .optional()
+        .describe("Hard cap on returned rows (defaults to 100). Max 500."),
+    }),
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: true,
+    },
+  },
+  async ({ cypher, params, limit }) => {
+    const max = limit ?? 100;
+    const result = await runReadCypher(cypher, params ?? {});
+    if (!result.ok) return error(`Cypher error: ${result.reason}`);
+
+    const rows = (result.records ?? []).slice(0, max);
+    const truncated = (result.records?.length ?? 0) > max;
+
+    return object({
+      cypher,
+      params: params ?? {},
+      rows,
+      rowCount: rows.length,
+      truncated,
+      tookMs: result.meta?.tookMs ?? 0,
+      database: result.meta?.database,
+    });
+  }
+);
+
+/* Tool 4: kg_person_overview — Person node + relationships summary */
+server.tool(
+  {
+    name: "kg_person_overview",
+    description:
+      "Returns the central Person node (the portfolio owner) from the knowledge graph along with an aggregated summary of their relationships — skills they have, repositories they own, projects they worked on, etc. Pair with the fixture-backed get_hero / get_about tools to compare the live graph against the curated story.",
+    schema: z.object({}),
+  },
+  async () => {
+    const personResult = await runReadCypher<{ person: any }>(
+      `
+      MATCH (p:Person)
+      RETURN p { .*, _elementId: elementId(p) } AS person
+      ORDER BY coalesce(p.primary, false) DESC, coalesce(p.name, "") ASC
+      LIMIT 1
+      `
+    );
+    if (!personResult.ok) {
+      return error(`Person query failed: ${personResult.reason}`);
+    }
+    if (!personResult.records?.length) {
+      return object({
+        configured: true,
+        connected: true,
+        person: null,
+        reason:
+          "Graph is reachable but contains no Person node yet. Run the Python ingestion pipeline to populate it.",
+      });
+    }
+
+    const person = personResult.records[0].person as Record<string, unknown>;
+    const elementId = person._elementId;
+
+    const relSummary = await runReadCypher<{ type: string; direction: string; count: number }>(
+      `
+      MATCH (p:Person) WHERE elementId(p) = $eid
+      OPTIONAL MATCH (p)-[r]->()
+      WITH p, type(r) AS type, count(r) AS count
+      WHERE type IS NOT NULL
+      RETURN type, "OUT" AS direction, count
+      UNION
+      MATCH (p:Person) WHERE elementId(p) = $eid
+      OPTIONAL MATCH (p)<-[r]-()
+      WITH p, type(r) AS type, count(r) AS count
+      WHERE type IS NOT NULL
+      RETURN type, "IN" AS direction, count
+      `,
+      { eid: elementId }
+    );
+
+    const skills = await runReadCypher<{ name: string; level?: string; years?: number }>(
+      `
+      MATCH (p:Person)-[r:HAS_SKILL|USES]-(s:Skill) WHERE elementId(p) = $eid
+      RETURN s.name AS name, s.level AS level, s.years AS years
+      ORDER BY coalesce(s.years, 0) DESC, name ASC
+      LIMIT 50
+      `,
+      { eid: elementId }
+    );
+
+    const projects = await runReadCypher<{ name: string; description?: string }>(
+      `
+      MATCH (p:Person)--(proj)
+      WHERE elementId(p) = $eid AND any(l IN labels(proj) WHERE l IN ['Project','Repository'])
+      RETURN coalesce(proj.name, proj.title, proj.id) AS name, proj.description AS description
+      ORDER BY name
+      LIMIT 50
+      `,
+      { eid: elementId }
+    );
+
+    return object({
+      configured: true,
+      connected: true,
+      person,
+      relationshipSummary: relSummary.ok ? relSummary.records ?? [] : [],
+      skills: skills.ok ? skills.records ?? [] : [],
+      projects: projects.ok ? projects.records ?? [] : [],
+    });
+  }
+);
+
+/* Tool 5: kg_skill_evidence — find corroborating evidence for a skill */
+server.tool(
+  {
+    name: "kg_skill_evidence",
+    description:
+      "Given a skill name (case-insensitive), return all corroborating evidence from the knowledge graph: which repositories, files, functions, projects, and deployments use that skill. This is the live counterpart to the fixture-backed get_skill_detail tool.",
+    schema: z.object({
+      skill: z
+        .string()
+        .min(1)
+        .describe("Skill name to look up (e.g. 'TypeScript', 'Kubernetes', 'Postgres'). Case-insensitive."),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .max(200)
+        .optional()
+        .describe("Max evidence rows per category (default 50, max 200)."),
+    }),
+  },
+  async ({ skill, limit }) => {
+    const cap = limit ?? 50;
+
+    const skillNode = await runReadCypher<{ skill: any }>(
+      `
+      MATCH (s:Skill)
+      WHERE toLower(s.name) = toLower($name)
+      RETURN s { .*, _elementId: elementId(s) } AS skill
+      LIMIT 1
+      `,
+      { name: skill }
+    );
+
+    if (!skillNode.ok) return error(`Skill lookup failed: ${skillNode.reason}`);
+    if (!skillNode.records?.length) {
+      return object({
+        skill,
+        found: false,
+        reason: "No Skill node with that name. Try kg_search for fuzzy matching.",
+        evidence: { repositories: [], projects: [], files: [], deployments: [] },
+      });
+    }
+
+    const eid = (skillNode.records[0].skill as Record<string, unknown>)._elementId;
+
+    const [repos, projects, files, deployments] = await Promise.all([
+      runReadCypher(
+        `
+        MATCH (s:Skill)<-[r]-(repo:Repository) WHERE elementId(s) = $eid
+        RETURN coalesce(repo.name, repo.id) AS name, repo.url AS url, type(r) AS via
+        LIMIT $cap
+        `,
+        { eid, cap }
+      ),
+      runReadCypher(
+        `
+        MATCH (s:Skill)<-[r]-(proj:Project) WHERE elementId(s) = $eid
+        RETURN coalesce(proj.name, proj.title, proj.id) AS name, proj.description AS description, type(r) AS via
+        LIMIT $cap
+        `,
+        { eid, cap }
+      ),
+      runReadCypher(
+        `
+        MATCH (s:Skill)<-[r]-(f:File) WHERE elementId(s) = $eid
+        RETURN coalesce(f.path, f.name) AS path, f.language AS language, type(r) AS via
+        LIMIT $cap
+        `,
+        { eid, cap }
+      ),
+      runReadCypher(
+        `
+        MATCH (s:Skill)<-[r]-(d:Deployment) WHERE elementId(s) = $eid
+        RETURN coalesce(d.name, d.id) AS name, d.url AS url, d.provider AS provider, type(r) AS via
+        LIMIT $cap
+        `,
+        { eid, cap }
+      ),
+    ]);
+
+    return object({
+      skill,
+      found: true,
+      node: skillNode.records[0].skill,
+      evidence: {
+        repositories: repos.ok ? repos.records ?? [] : [],
+        projects: projects.ok ? projects.records ?? [] : [],
+        files: files.ok ? files.records ?? [] : [],
+        deployments: deployments.ok ? deployments.records ?? [] : [],
+      },
+      totals: {
+        repositories: repos.ok ? (repos.records?.length ?? 0) : 0,
+        projects: projects.ok ? (projects.records?.length ?? 0) : 0,
+        files: files.ok ? (files.records?.length ?? 0) : 0,
+        deployments: deployments.ok ? (deployments.records?.length ?? 0) : 0,
+      },
+    });
+  }
+);
+
+/* Tool 6: kg_search — free-text search across nodes */
+server.tool(
+  {
+    name: "kg_search",
+    description:
+      "Free-text search across the knowledge graph. Matches the query string (case-insensitive substring) against the most common text properties (name, title, description, summary, content, path) on any node. Returns up to `limit` matches with their labels and key properties.",
+    schema: z.object({
+      query: z.string().min(1).describe("Search query (case-insensitive substring match)."),
+      labels: z
+        .array(z.string())
+        .optional()
+        .describe("Optional list of node labels to restrict the search (e.g. ['Skill','Project'])."),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .max(200)
+        .optional()
+        .describe("Max results (default 25, max 200)."),
+    }),
+  },
+  async ({ query, labels, limit }) => {
+    const cap = limit ?? 25;
+    const safeLabels =
+      labels?.filter((l) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(l)) ?? [];
+
+    const labelClause = safeLabels.length
+      ? `AND any(l IN labels(n) WHERE l IN $labels)`
+      : "";
+
+    const cypher = `
+      MATCH (n)
+      WHERE (
+        toLower(coalesce(n.name, '')) CONTAINS toLower($q)
+        OR toLower(coalesce(n.title, '')) CONTAINS toLower($q)
+        OR toLower(coalesce(n.description, '')) CONTAINS toLower($q)
+        OR toLower(coalesce(n.summary, '')) CONTAINS toLower($q)
+        OR toLower(coalesce(n.content, '')) CONTAINS toLower($q)
+        OR toLower(coalesce(n.path, '')) CONTAINS toLower($q)
+      )
+      ${labelClause}
+      RETURN labels(n) AS labels,
+             elementId(n) AS elementId,
+             coalesce(n.name, n.title, n.id, n.path) AS title,
+             coalesce(n.description, n.summary, '') AS snippet
+      LIMIT $cap
+    `;
+
+    const result = await runReadCypher(cypher, {
+      q: query,
+      labels: safeLabels,
+      cap,
+    });
+
+    if (!result.ok) return error(`Search failed: ${result.reason}`);
+
+    return object({
+      query,
+      labels: safeLabels,
+      resultCount: result.records?.length ?? 0,
+      results: result.records ?? [],
+      tookMs: result.meta?.tookMs ?? 0,
+    });
   }
 );
 

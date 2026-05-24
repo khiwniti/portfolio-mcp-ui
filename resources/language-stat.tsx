@@ -41,6 +41,25 @@ const propsSchema = z.object({
     .object({ title: z.string(), language: z.string(), code: z.string() })
     .optional(),
   benchmarks: z.array(z.object({ label: z.string(), value: z.string() })),
+  liveEvidence: z
+    .object({
+      source: z.literal("kg"),
+      slug: z.string(),
+      label: z.string(),
+      confidence: z.number(),
+      reposUsing: z.number(),
+      sampleRepos: z.array(
+        z.object({
+          label: z.string(),
+          url: z.string().optional(),
+          description: z.string().optional(),
+          language: z.string().optional(),
+        })
+      ),
+      tookMs: z.number().optional(),
+    })
+    .nullable()
+    .optional(),
 });
 
 type Props = z.infer<typeof propsSchema>;
@@ -250,6 +269,84 @@ export default function LanguageStat() {
                 </button>
               ))}
             </div>
+          </section>
+        )}
+
+        {props.liveEvidence && (
+          <section
+            style={{
+              marginBottom: 14,
+              padding: isMobile ? 12 : 14,
+              border: `1px solid ${c.accent}`,
+              borderRadius: 8,
+              backgroundColor: c.panel,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                flexWrap: "wrap",
+                marginBottom: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  backgroundColor: c.accent,
+                  color: "#fff",
+                  fontWeight: 700,
+                  letterSpacing: 0.6,
+                }}
+              >
+                LIVE GRAPH
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                {props.liveEvidence.label}
+              </span>
+              <span style={{ fontSize: 12, color: c.sub }}>
+                {props.liveEvidence.reposUsing} repos · slug {props.liveEvidence.slug}
+              </span>
+              {props.liveEvidence.tookMs != null && (
+                <span style={{ fontSize: 11, color: c.sub }}>
+                  ({props.liveEvidence.tookMs}ms)
+                </span>
+              )}
+            </div>
+            {props.liveEvidence.sampleRepos.length > 0 && (
+              <div
+                style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+              >
+                {props.liveEvidence.sampleRepos.slice(0, 8).map((r) => (
+                  <a
+                    key={r.label}
+                    href={r.url || "#"}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    title={r.description}
+                    style={{
+                      padding: "4px 10px",
+                      border: `1px solid ${c.border}`,
+                      borderRadius: 999,
+                      backgroundColor: c.bg,
+                      color: c.text,
+                      fontSize: isMobile ? 11 : 12,
+                      textDecoration: "none",
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{r.label}</span>
+                    {r.language && (
+                      <span style={{ color: c.sub, marginLeft: 6 }}>
+                        {r.language}
+                      </span>
+                    )}
+                  </a>
+                ))}
+              </div>
+            )}
           </section>
         )}
 
