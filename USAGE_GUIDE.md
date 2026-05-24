@@ -2,7 +2,7 @@
 
 > The complete handbook for consuming `portfolio-mcp-ui` from any frontend, AI host, or backend.
 >
-> **Server identity:** `portfolio-mcp-ui` · **Tools:** 36 · **Widgets:** 30 · **Drill levels:** 4
+> **Server identity:** `portfolio-mcp-ui` · **Tools:** 42 · **Widgets:** 31 · **Drill levels:** 4
 
 ---
 
@@ -18,7 +18,8 @@
    - 4.4 [Custom React frontend](#44-custom-react-frontend-mcp-use-client)
    - 4.5 [Claude API with `mcp_servers`](#45-claude-api-with-mcp_servers)
    - 4.6 [Direct HTTP / raw protocol](#46-direct-http--raw-protocol)
-5. [The 36-tool catalog](#5-the-36-tool-catalog)
+5. [The 42-tool catalog](#5-the-42-tool-catalog)
+   5a. [Knowledge graph tools](#5a-knowledge-graph-tools)
 6. [Drill-down patterns](#6-drill-down-patterns)
 7. [Widget rendering contract](#7-widget-rendering-contract)
 8. [Common integration recipes](#8-common-integration-recipes)
@@ -89,7 +90,7 @@ Every tool returns both. A graphical host (Claude Desktop, ChatGPT, the MCP Insp
 
 ### 3.4 Stateless, idempotent, side-effect-free (with one exception)
 
-35 of the 36 tools are pure reads. `submit_contact_message` is the only write. `track_event` is logged but has no observable side effect in v1.
+41 of the 42 tools are pure reads. `submit_contact_message` is the only write. `track_event` is logged but has no observable side effect in v1.
 
 ---
 
@@ -103,7 +104,7 @@ Fastest way to explore the server. No code.
 
 1. Open the embedded Inspector in this sandbox, or visit any MCP Inspector instance.
 2. Connect to the server URL.
-3. Click **List Tools** — you should see 36 tools.
+3. Click **List Tools** — you should see 42 tools.
 4. Click any tool, fill the JSON args, hit **Call Tool**. The widget renders inline.
 
 Start with `get_hero` (no args), then click through the breadcrumbs of any drill-down widget.
@@ -130,7 +131,7 @@ Claude will discover the tools and chain `get_hero` → `get_projects` → `get_
 
 ### 4.3 ChatGPT (Apps SDK)
 
-In the ChatGPT app builder UI, add a new MCP connector pointing at the server URL. ChatGPT auto-discovers the 36 tools. Native widget rendering is supported by the Apps SDK.
+In the ChatGPT app builder UI, add a new MCP connector pointing at the server URL. ChatGPT auto-discovers the 42 tools. Native widget rendering is supported by the Apps SDK.
 
 ### 4.4 Custom React frontend (`mcp-use` client)
 
@@ -289,7 +290,7 @@ Use this for static-site generation: at build time, fetch every section, render 
 
 ---
 
-## 5. The 36-tool catalog
+## 5. The 42-tool catalog
 
 Every tool name links the call signature, what it returns, and what it drills into. All argument names are camelCase or snake_case depending on the tool — the schema is the source of truth (call `tools/list` to introspect).
 
@@ -355,6 +356,43 @@ Every tool name links the call signature, what it returns, and what it drills in
 | `submit_contact_message` | `name`, `email`, `message` | Confirmation widget with reference id |
 
 To get the canonical signature of any tool, call `tools/list` and read the `inputSchema`. The schemas are Zod-derived and authoritative.
+
+### 5a. Knowledge graph tools (6 tools)
+
+These tools query the live Neo4j Aura knowledge graph. When the graph is not configured they return a clear error message — no other tool is affected.
+
+| Tool | Args | Returns |
+|---|---|---|
+| `kg_overview` | none | Graph dashboard widget: node/rel counts, top technologies, repo clusters |
+| `kg_health` | none | Connectivity check: node count, relationship count, response time |
+| `kg_schema` | none | Node labels, relationship types, property keys present in the graph |
+| `kg_person_overview` | none | Person node summary: repos authored, deployments owned, top languages |
+| `kg_skill_evidence` | `skill_name` | Technology node + repos that USES the technology |
+| `kg_query` | `cypher` (non-empty string) | Execute a read-only Cypher query; returns rows as JSON array |
+
+**Live enrichment props** — 9 existing tools return an extra `live*` prop when Neo4j is reachable:
+
+| Tool | Live prop | What it adds |
+|---|---|---|
+| `get_hero_stats` | `liveSummary` | Person node, repo count, deployment count, top languages |
+| `get_skills` | `liveTechRankings` | Technology nodes ranked by repo-count |
+| `get_skill_detail` | `liveEvidence` | Technology node + list of repos using it |
+| `get_projects` | `liveStats` | Aggregate repo/deployment/language stats |
+| `get_project_detail` | `liveRepo` / `liveTechStack` | Repo node + tech relationships |
+| `get_project_techstack` | `liveTechStack` | Tech stack from graph edges |
+| `get_open_source` | `liveRepoCount` / `liveTopRepos` | Repo count + top repos by tech breadth |
+| `get_portfolio_stats` | `liveGraphStats` | Aggregate node/relationship counts |
+| `get_language_stat` | `liveEvidence` | Repos using the language, with GitHub URLs |
+
+The live prop is always `null` when the graph is unreachable — the rest of the response is unchanged.
+
+To enable live enrichment, add to your `.env`:
+```env
+NEO4J_URI=neo4j+s://<instance-id>.databases.neo4j.io
+NEO4J_USERNAME=<username>
+NEO4J_PASSWORD=<password>
+NEO4J_DATABASE=<database>
+```
 
 ---
 

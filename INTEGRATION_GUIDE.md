@@ -2,13 +2,15 @@
 ## Sprint-by-Sprint Implementation for khiw.dev
 
 **Status**: Ready for integration  
-**MCP Server**: `portfolio-mcp-ui` (36 tools, 30 widgets)  
+**MCP Server**: `portfolio-mcp-ui` (42 tools, 31 widgets)  
 **Endpoint**: `https://fast-pulse-37yfv.run.mcp-use.com/mcp`  
 **Timeline**: 5 sprints, 95 hours
 
 ---
 
-## Overview: The 36 Tools
+> **Status update (2026-05-24):** The MCP server is live with 42 tools and 31 widgets, and is connected to a live Neo4j Aura knowledge graph (222k nodes, 241k relationships). Sprints 1–2 are fully implemented server-side. Sprints 3–5 require integration work in the `khiw.console v3` repository.
+
+## Overview: The 42 Tools
 
 ### Tier 1 — Section Renderers (6 tools, top-level)
 All return interactive widgets that can be embedded directly:
@@ -39,6 +41,39 @@ For search, domain lookups, analytics:
 - `search_content(query, section?)` — search across sections
 - `search_all(query, limit?)` — global search
 - `track_event(eventName, section?, metadata?)` — analytics
+
+### Tier 4 — Knowledge Graph Tools (6 live-graph tools)
+
+These tools query the live Neo4j Aura instance (`resume-knowladge-graph`). All are optional — the server runs and all 36 portfolio tools respond with fixture data whether or not the graph is connected.
+
+- `kg_health` — connectivity check with node/relationship counts
+- `kg_schema` — labels, relationship types, and property keys
+- `kg_person_overview` — Person node summary (repos, deployments, languages)
+- `kg_skill_evidence(skill_name)` — Technology node + repos using it
+- `kg_query(cypher)` — read-only Cypher execution (non-empty string required)
+- `kg_overview` — full graph dashboard widget (node clusters, top tech, repo stats)
+
+**Live enrichment on existing tools** — 9 of the 36 portfolio tools now return a `live*` prop when the graph is reachable:
+
+| Tool | Prop | Data |
+|---|---|---|
+| `get_hero_stats` | `liveSummary` | 230 repos, 22 deployments, top languages |
+| `get_skills` | `liveTechRankings` | 60 technologies ranked by repo count |
+| `get_skill_detail` | `liveEvidence` | Technology node + repos using it |
+| `get_projects` | `liveStats` | 230 repos, 22 deployments |
+| `get_project_detail` | `liveRepo` / `liveTechStack` | Repo node + tech relationships |
+| `get_project_techstack` | `liveTechStack` | Tech stack from graph edges |
+| `get_open_source` | `liveRepoCount` / `liveTopRepos` | 230 repos, top 10 by tech breadth |
+| `get_portfolio_stats` | `liveGraphStats` | 222k nodes, 241k relationships |
+| `get_language_stat` | `liveEvidence` | Repos using the language with GitHub URLs |
+
+Set these environment variables to activate live enrichment (Vercel dashboard → Settings → Environment Variables):
+```
+NEO4J_URI=neo4j+s://<instance>.databases.neo4j.io
+NEO4J_USERNAME=<username>
+NEO4J_PASSWORD=<password>
+NEO4J_DATABASE=<database>
+```
 
 ---
 
@@ -90,7 +125,7 @@ const HeroSection = () => {
 
 **Helper Hook** (create `hooks/useMCPTool.ts`):
 ```typescript
-import { MCPClient } from '@anthropic-ai/sdk/mcp';
+import { MCPClient } from 'mcp-use/client';
 
 const mcpClient = new MCPClient({
   serverUrl: 'https://fast-pulse-37yfv.run.mcp-use.com/mcp',
