@@ -2,15 +2,15 @@
 ## Sprint-by-Sprint Implementation for khiw.dev
 
 **Status**: Ready for integration  
-**MCP Server**: `portfolio-mcp-ui` (42 tools, 31 widgets)  
+**MCP Server**: `portfolio-mcp-ui` (48 tools, 36 widgets)  
 **Endpoint**: `https://fast-pulse-37yfv.run.mcp-use.com/mcp`  
 **Timeline**: 5 sprints, 95 hours
 
 ---
 
-> **Status update (2026-05-24):** The MCP server is live with 42 tools and 31 widgets, and is connected to a live Neo4j Aura knowledge graph (222k nodes, 241k relationships). Sprints 1–2 are fully implemented server-side. Sprints 3–5 require integration work in the `khiw.console v3` repository.
+> **Status update (2026-05-25):** The MCP server is live with 48 tools and 36 widgets, connected to a live Neo4j Aura knowledge graph (222k nodes, 241k relationships). Sprints 1–4 are fully implemented server-side (including JD-tailored resume export, live GitHub ingestion, OAuth-gated drafts, and semantic KG search). Sprint 5 UI integration requires work in the `khiw.console v3` repository.
 
-## Overview: The 42 Tools
+## Overview: The 48 Tools
 
 ### Tier 1 — Section Renderers (6 tools, top-level)
 All return interactive widgets that can be embedded directly:
@@ -44,7 +44,7 @@ For search, domain lookups, analytics:
 
 ### Tier 4 — Knowledge Graph Tools (6 live-graph tools)
 
-These tools query the live Neo4j Aura instance (`resume-knowladge-graph`). All are optional — the server runs and all 36 portfolio tools respond with fixture data whether or not the graph is connected.
+These tools query the live Neo4j Aura instance (`resume-knowladge-graph`). All are optional — the server runs and all 42 portfolio tools respond with fixture data whether or not the graph is connected.
 
 - `kg_health` — connectivity check with node/relationship counts
 - `kg_schema` — labels, relationship types, and property keys
@@ -288,6 +288,68 @@ Once all sections are live, compare rendered output with current static version:
 | `track_event` | Analytics tracking | Task 3.1 |
 
 **Ready to use:** You can integrate `list_posts` into Sprint 1 if you have a blog section, or defer to Sprint 3.
+
+---
+
+## Sprint 4: Live Data Ingestion — COMPLETE ✓ (server-side)
+
+**Status**: All tools built, tested, and verified. Integration into `khiw.console v3` is a Sprint 5 task.
+
+| Tool | What it does | Live data source |
+|---|---|---|
+| `get_github_stats` | Repo count, language breakdown, star/fork totals | GitHub REST API (15-min cache) |
+| `get_oss_feed` | Latest public GitHub events (push, PR, issues) | GitHub public events API (10-min cache) |
+| `get_drafts` | List saved content drafts | In-memory store (protected by `DRAFTS_API_KEY`) |
+| `save_draft` | Create or update a draft | In-memory store (protected by `DRAFTS_API_KEY`) |
+
+**Environment variables needed:**
+
+```env
+GITHUB_TOKEN=ghp_...          # Optional but recommended — raises rate limit to 5000 req/h
+GITHUB_USERNAME=khiwniti      # Account whose stats and events are fetched
+DRAFTS_API_KEY=your-secret    # Required; requests without it receive a 401-style error response
+```
+
+---
+
+## Sprint 5: AI-Powered Export & Semantic Search — COMPLETE ✓ (server-side)
+
+**Status**: Both tools built, tested, and verified. Widget integration into `khiw.console v3` is pending.
+
+| Tool | What it does | Notes |
+|---|---|---|
+| `get_resume_pdf` | JD keyword match scoring + tailored resume JSON | Pass a job description; receive match %, matched keywords, gaps, and a filtered resume payload |
+| `kg_semantic_search` | 3-tier KG search: vector → fulltext → substring | Requires `OPENAI_API_KEY` for vector tier; gracefully degrades without it |
+
+**Integration recipe — JD-tailored resume download:**
+
+```typescript
+const result = await session.callTool({
+  name: "get_resume_pdf",
+  arguments: {
+    jobDescription: "Staff Engineer with TypeScript and Kubernetes experience",
+    format: "json",
+    sections: ["experience", "projects", "skills"],
+  },
+});
+
+const { matchScore, matchedKeywords, missingKeywords, resume } = result.structuredContent;
+// matchScore: 0.50, matchedKeywords: ["typescript","kubernetes","engineer"]
+// resume: filtered subset of portfolio data ranked by relevance
+```
+
+**Integration recipe — semantic search:**
+
+```typescript
+const result = await session.callTool({
+  name: "kg_semantic_search",
+  arguments: { query: "TypeScript backend API", labels: ["Technology", "Repo"], limit: 10 },
+});
+
+const { results, vectorEnabled, searchTier } = result.structuredContent;
+// searchTier: "substring" | "fulltext" | "vector"
+// results: [{ type, name, properties }]
+```
 
 ---
 

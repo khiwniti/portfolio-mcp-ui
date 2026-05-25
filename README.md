@@ -12,7 +12,7 @@
 
 ### A career told in tools, not pages.
 
-**42 typed tools · 31 interactive widgets · 4-level drill · Neo4j live knowledge graph · zero static HTML**
+**48 typed tools · 36 interactive widgets · 4-level drill · Neo4j live knowledge graph · zero static HTML**
 
 [![MCP](https://img.shields.io/badge/MCP-0.10.0-9333ea?style=for-the-badge&logo=anthropic&logoColor=white)](https://modelcontextprotocol.io)
 [![mcp-use](https://img.shields.io/badge/mcp--use-latest-22c55e?style=for-the-badge&logo=node.js&logoColor=white)](https://mcp-use.com)
@@ -23,7 +23,7 @@
 
 <sub>built with `mcp-use` · powered by `Hono` · rendered by `React 19` · enriched by `Neo4j Aura` · validated by `Zod`</sub>
 
-[**Quick Start**](#-quick-start) · [**Deploy**](#-deploy-to-vercel) · [**Tool Catalog**](#-the-42-tool-hierarchy) · [**Knowledge Graph**](#-live-knowledge-graph-enrichment) · [**Architecture**](#-architecture) · [**Integrate**](#-integration-recipes) · [**Docs**](#-docs)
+[**Quick Start**](#-quick-start) · [**Deploy**](#-deploy-to-vercel) · [**Tool Catalog**](#-the-48-tool-hierarchy) · [**Knowledge Graph**](#-live-knowledge-graph-enrichment) · [**Architecture**](#-architecture) · [**Integrate**](#-integration-recipes) · [**Docs**](#-docs)
 
 </div>
 
@@ -68,13 +68,13 @@ On top of the fixture layer, a live **Neo4j Aura** knowledge graph with 222 k no
 <tr>
 <td width="33%" valign="top">
 
-### 42 typed tools
-Every section, sub-section, primary source, write-back, and knowledge graph query as a Zod-validated MCP tool. Tool registry auto-generated to `.mcp-use/tool-registry.d.ts` — full autocomplete in any consumer.
+### 48 typed tools
+Every section, sub-section, primary source, write-back, knowledge graph query, GitHub ingestion, and drafts surface as a Zod-validated MCP tool. Tool registry auto-generated to `.mcp-use/tool-registry.d.ts` — full autocomplete in any consumer.
 
 </td>
 <td width="33%" valign="top">
 
-### 31 responsive widgets
+### 36 responsive widgets
 React 19 + theme-aware, mobile/tablet/desktop adaptive via a JS-based `useViewport()` hook, `McpUseProvider autoSize`. Cross-link via `sendFollowUpMessage` so the AI can drill deeper from inside a widget.
 
 </td>
@@ -89,7 +89,7 @@ React 19 + theme-aware, mobile/tablet/desktop adaptive via a JS-based `useViewpo
 <td valign="top">
 
 ### Live knowledge graph
-Neo4j Aura integration via `lib/graph-v3.ts`. 222 k nodes, 241 k relationships. 9 existing tools return `live*` props when the graph is reachable, with graceful fallback to fixture data when it is not.
+Neo4j Aura integration via `lib/graph-v4.ts`. 222 k nodes, 241 k relationships. 9 existing tools return `live*` props when the graph is reachable, with graceful fallback to fixture data when it is not.
 
 </td>
 <td valign="top">
@@ -126,7 +126,7 @@ curl -X POST http://localhost:3000/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
   | jq '.result.tools | length'
-# → 42
+# → 48
 ```
 
 ### Optional: enable live knowledge graph
@@ -176,7 +176,7 @@ https://<project>.vercel.app/mcp
 | `vercel.json` | Routes every request to `/api/index`, sets 60s `maxDuration` and 1024 MB memory, opens CORS on `/mcp` and `/.well-known/*`, hardens headers. |
 | `api/index.ts` | The Vercel function. Wraps `server.app` (the underlying Hono instance) with `handle()` from `hono/vercel`. |
 | `index.ts` | Guards `server.listen()` behind `!process.env.VERCEL` so the same source runs on Vercel, Manufact Cloud, Docker, or `node dist/index.js` without forks. |
-| `lib/graph-v3.ts` | Neo4j Aura adapter. Reads credentials via `getEnv()` (disk-based fallback for HMR). All public functions fail silently when KG is not configured. |
+| `lib/graph-v4.ts` | Neo4j Aura adapter. Reads credentials via `getEnv()` (disk-based fallback for HMR). All public functions fail silently when KG is not configured. |
 
 ### Plug it into Claude Desktop
 
@@ -236,7 +236,7 @@ Restart Claude. Ask: *"call get_projects and show me edge-stream's metrics dashb
    │           └──────────────┬──────────────┘                        │
    │                          │  live enrichment (optional)           │
    │           ┌──────────────▼──────────────┐                        │
-   │           │   lib/graph-v3.ts           │                        │
+   │           │   lib/graph-v4.ts           │                        │
    │           │   Neo4j Aura · 222k nodes   │                        │
    │           │   graceful degradation      │                        │
    │           └─────────────────────────────┘                        │
@@ -258,7 +258,7 @@ Restart Claude. Ask: *"call get_projects and show me edge-stream's metrics dashb
 
 ---
 
-## The 42-tool hierarchy
+## The 48-tool hierarchy
 
 ### Level 1 — Section roots (9 tools)
 
@@ -457,9 +457,9 @@ Full recipe library lives in **[USAGE_GUIDE.md](./USAGE_GUIDE.md)** and integrat
 
 ```
 portfolio-mcp-ui/
-├── index.ts                     # 42 tools, fixtures, MCPServer init
+├── index.ts                     # 48 tools, fixtures, MCPServer init
 ├── lib/
-│   └── graph-v3.ts              # Neo4j Aura adapter (graceful degradation)
+│   └── graph-v4.ts              # Neo4j Aura adapter (graceful degradation)
 ├── api/
 │   └── index.ts                 # Vercel handler — wraps server.app via hono/vercel
 ├── vercel.json                  # routes, headers, CORS, function config
@@ -496,7 +496,7 @@ curl -sX POST http://localhost:3000/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
   | jq '.result.tools | length'
-# → 42
+# → 48
 
 # confirm KG enrichment (requires .env with valid credentials)
 curl -sX POST http://localhost:3000/mcp \
@@ -551,13 +551,13 @@ curl -sX POST http://localhost:3000/mcp \
 - [x] 36-tool hierarchy across 4 drill levels
 - [x] 6 knowledge graph tools (`kg_overview`, `kg_person_summary`, `kg_tech_rankings`, `kg_repo_detail`, `kg_top_repos`, `kg_search`)
 - [x] Live Neo4j Aura enrichment on 9 existing tools (graceful degradation)
-- [x] 31 fully responsive widgets (mobile / tablet / desktop via `useViewport()`)
+- [x] 36 fully responsive widgets (mobile / tablet / desktop via `useViewport()`)
 - [x] Vercel one-click deploy via `hono/vercel` adapter
 - [x] Integration handbook + sprint roadmap docs
-- [ ] JD-tailored resume PDF export (`get_resume_pdf`)
-- [ ] OAuth-gated drafts surface (`oauthProxy` + Auth0)
-- [ ] Live GitHub ingestion (project metrics, OSS contributions, language stats)
-- [ ] Full-text KG search with vector embeddings
+- [x] JD-tailored resume PDF export (`get_resume_pdf`)
+- [x] OAuth-gated drafts surface (`get_drafts` / `save_draft` via Auth0 proxy)
+- [x] Live GitHub ingestion (`get_github_stats` / `get_oss_feed`)
+- [x] Full-text KG search with vector embeddings (`kg_semantic_search`)
 
 ---
 

@@ -2,7 +2,7 @@
 
 > The complete handbook for consuming `portfolio-mcp-ui` from any frontend, AI host, or backend.
 >
-> **Server identity:** `portfolio-mcp-ui` · **Tools:** 42 · **Widgets:** 31 · **Drill levels:** 4
+> **Server identity:** `portfolio-mcp-ui` · **Tools:** 48 · **Widgets:** 36 · **Drill levels:** 4
 
 ---
 
@@ -18,7 +18,7 @@
    - 4.4 [Custom React frontend](#44-custom-react-frontend-mcp-use-client)
    - 4.5 [Claude API with `mcp_servers`](#45-claude-api-with-mcp_servers)
    - 4.6 [Direct HTTP / raw protocol](#46-direct-http--raw-protocol)
-5. [The 42-tool catalog](#5-the-42-tool-catalog)
+5. [The 48-tool catalog](#5-the-48-tool-catalog)
    5a. [Knowledge graph tools](#5a-knowledge-graph-tools)
 6. [Drill-down patterns](#6-drill-down-patterns)
 7. [Widget rendering contract](#7-widget-rendering-contract)
@@ -90,7 +90,7 @@ Every tool returns both. A graphical host (Claude Desktop, ChatGPT, the MCP Insp
 
 ### 3.4 Stateless, idempotent, side-effect-free (with one exception)
 
-41 of the 42 tools are pure reads. `submit_contact_message` is the only write. `track_event` is logged but has no observable side effect in v1.
+45 of the 48 tools are pure reads. `submit_contact_message` is the only user-facing write. `track_event` is logged but has no observable side effect in v1. `save_draft` is a protected write (requires `DRAFTS_API_KEY`); `kg_query` executes read-only Cypher.
 
 ---
 
@@ -104,7 +104,7 @@ Fastest way to explore the server. No code.
 
 1. Open the embedded Inspector in this sandbox, or visit any MCP Inspector instance.
 2. Connect to the server URL.
-3. Click **List Tools** — you should see 42 tools.
+3. Click **List Tools** — you should see 48 tools.
 4. Click any tool, fill the JSON args, hit **Call Tool**. The widget renders inline.
 
 Start with `get_hero` (no args), then click through the breadcrumbs of any drill-down widget.
@@ -131,7 +131,7 @@ Claude will discover the tools and chain `get_hero` → `get_projects` → `get_
 
 ### 4.3 ChatGPT (Apps SDK)
 
-In the ChatGPT app builder UI, add a new MCP connector pointing at the server URL. ChatGPT auto-discovers the 42 tools. Native widget rendering is supported by the Apps SDK.
+In the ChatGPT app builder UI, add a new MCP connector pointing at the server URL. ChatGPT auto-discovers the 48 tools. Native widget rendering is supported by the Apps SDK.
 
 ### 4.4 Custom React frontend (`mcp-use` client)
 
@@ -290,7 +290,7 @@ Use this for static-site generation: at build time, fetch every section, render 
 
 ---
 
-## 5. The 42-tool catalog
+## 5. The 48-tool catalog
 
 Every tool name links the call signature, what it returns, and what it drills into. All argument names are camelCase or snake_case depending on the tool — the schema is the source of truth (call `tools/list` to introspect).
 
@@ -354,6 +354,35 @@ Every tool name links the call signature, what it returns, and what it drills in
 | `search_all` | `query`, `limit?` | Global search across all sections |
 | `track_event` | `eventName`, `section?`, `metadata?` | Analytics write (logged server-side) |
 | `submit_contact_message` | `name`, `email`, `message` | Confirmation widget with reference id |
+
+### 5b. Sprint 4/5 — Advanced tools (6 tools)
+
+These tools were added in Sprint 4 (live data ingestion) and Sprint 5 (AI-powered export + drafts).
+
+| Tool | Args | Auth | Returns |
+|---|---|---|---|
+| `get_resume_pdf` | `jobDescription` (≥10 chars), `format?` (`pdf`/`json`), `sections?` | Public | JD-keyword match score, matched/missing terms, tailored resume JSON |
+| `get_github_stats` | `username?` | Public | Live GitHub repo/language stats (15-min cached); falls back to fixture if API unreachable |
+| `get_drafts` | `apiKey?` | Protected (`DRAFTS_API_KEY`) | List of saved content drafts; returns `401` if key missing or wrong |
+| `save_draft` | `title`, `body`, `section?`, `tags?`, `apiKey?` | Protected | Create/update draft; returns saved draft with id and timestamp |
+| `get_oss_feed` | `limit?` (1–100, default 20) | Public | Live GitHub public events (PushEvent, PullRequestEvent, etc.) with repo links |
+| `kg_semantic_search` | `query`, `labels?`, `limit?` | Public | 3-tier search: OpenAI vector → fulltext index → substring. Returns matching nodes with type, name, properties |
+
+**Environment variables required for full functionality:**
+
+```env
+# Sprint 4 — Live GitHub ingestion
+GITHUB_TOKEN=ghp_...            # Optional — increases rate limit from 60 to 5000 req/h
+GITHUB_USERNAME=your-username   # Default used by get_oss_feed and get_github_stats
+
+# Sprint 4 — OAuth-gated drafts
+DRAFTS_API_KEY=your-secret-key  # Required for get_drafts / save_draft
+
+# Sprint 5 — Vector search
+OPENAI_API_KEY=sk-...           # Enables vector embeddings in kg_semantic_search
+```
+
+When `OPENAI_API_KEY` is absent, `kg_semantic_search` falls back to Neo4j fulltext index, then to CONTAINS substring matching. Results are always returned — the tier used is indicated in the response.
 
 To get the canonical signature of any tool, call `tools/list` and read the `inputSchema`. The schemas are Zod-derived and authoritative.
 

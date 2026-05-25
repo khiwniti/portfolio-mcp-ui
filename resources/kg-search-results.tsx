@@ -19,6 +19,7 @@ const propsSchema = z.object({
   tookMs: z.number(),
   searchLabels: z.array(z.string()),
   vectorEnabled: z.boolean(),
+  fulltextIndexUsed: z.string().optional(),
 });
 
 export const widgetMetadata: WidgetMetadata = {

@@ -1,4 +1,4 @@
-import { MCPServer, widget, text, error, object } from "mcp-use/server";
+import { MCPServer, widget, text, error, object, oauthProxy, jwksVerifier } from "mcp-use/server";
 import { z } from "zod";
 import {
   runReadCypher,
@@ -15,8 +15,19 @@ import {
   kgPersonSummary,
   kgTopTechnologies,
   kgTopRepos,
-} from "./lib/graph-v3.js";
-import { getGitHubStatsCached } from "./lib/github.js";
+  kgFullTextSearch,
+  kgListIndexes,
+} from "./lib/graph-v4.js";
+import { getGitHubStatsCached, getGitHubEventsCached } from "./lib/github.js";
+
+// ─── Auth0 OAuth (optional — server stays fully public when these are unset) ──
+// Set AUTH0_DOMAIN + AUTH0_CLIENT_ID to enable an oauthProxy gate on every
+// tool.  Without these vars the server operates in open/public mode, which is
+// the correct default for a public portfolio.
+const _a0Domain = process.env.AUTH0_DOMAIN || "";
+const _a0Audience = process.env.AUTH0_AUDIENCE || "";
+const _a0ClientId = process.env.AUTH0_CLIENT_ID || "";
+const _a0ClientSecret = process.env.AUTH0_CLIENT_SECRET || "";
 
 const server = new MCPServer({
   name: "portfolio-mcp-ui",
@@ -34,6 +45,24 @@ const server = new MCPServer({
       sizes: ["512x512"],
     },
   ],
+  ...(_a0Domain && _a0ClientId
+    ? {
+        oauth: oauthProxy({
+          authEndpoint: `https://${_a0Domain}/authorize`,
+          tokenEndpoint: `https://${_a0Domain}/oauth/token`,
+          issuer: `https://${_a0Domain}/`,
+          clientId: _a0ClientId,
+          clientSecret: _a0ClientSecret || undefined,
+          scopes: ["openid", "email", "profile"],
+          extraAuthorizeParams: _a0Audience ? { audience: _a0Audience } : {},
+          verifyToken: jwksVerifier({
+            jwksUrl: `https://${_a0Domain}/.well-known/jwks.json`,
+            issuer: `https://${_a0Domain}/`,
+            audience: _a0Audience || undefined,
+          }),
+        }),
+      }
+    : {}),
 });
 
 /* ------------------------------------------------------------------ */
@@ -5444,12 +5473,68 @@ server.tool(
   }
 );
 
+// ── get_oss_feed ─────────────────────────────────────────────────────────── v2
+server.tool(
+  {
+    name: "get_oss_feed",
+    description:
+      "Fetch the live GitHub public activity feed for the configured username — pushes, pull requests, issues, releases, forks and more. Refreshes every 10 minutes.",
+    schema: z.object({
+      limit: z
+        .number()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe("Number of recent events to return (default 30, max 100)"),
+    }),
+    widget: {
+      name: "oss-feed",
+      invoking: "Fetching OSS activity...",
+      invoked: "Activity feed ready",
+    },
+  },
+  async ({ limit }) => {
+    const cap = limit ?? 30;
+    const username = process.env.GITHUB_USERNAME || "";
+    if (!username) {
+      return error(
+        "GITHUB_USERNAME is not configured. Set it in the server environment to enable the live OSS feed."
+      );
+    }
+
+    const result = await getGitHubEventsCached(username, cap);
+    if (!result.ok) {
+      return error(`GitHub events fetch failed: ${result.reason}`);
+    }
+
+    const { data: activities } = result;
+    const hasGithubToken = Boolean(process.env.GITHUB_TOKEN);
+
+    return widget({
+      props: {
+        username,
+        activities,
+        totalCount: activities.length,
+        hasGithubToken,
+        fetchedAt: new Date().toISOString(),
+      },
+      output: text(
+        `@${username} OSS activity — ${activities.length} recent public event${activities.length !== 1 ? "s" : ""}.\n` +
+          activities
+            .slice(0, 5)
+            .map((a) => `• ${a.eventLabel} in ${a.repoName}${a.detail ? `: ${a.detail.slice(0, 60)}` : ""}`)
+            .join("\n")
+      ),
+    });
+  }
+);
+
 // ── kg_semantic_search ────────────────────────────────────────────────────────
 server.tool(
   {
     name: "kg_semantic_search",
     description:
-      "Search the portfolio knowledge graph using full-text or substring matching. Finds Technology, Repo, and Person nodes matching the query. Attempts the Neo4j full-text index first; falls back to CONTAINS substring search automatically.",
+      "Search the portfolio knowledge graph semantically. Finds Technology, Repo, and Person nodes matching the query. Uses vector embedding search (OpenAI) when available, falls back to full-text index, then CONTAINS substring search automatically.",
     schema: z.object({
       query: z.string().min(1).describe("Search query — natural language keywords or a tech name"),
       labels: z
@@ -5458,6 +5543,7 @@ server.tool(
         .describe("Filter to specific node labels: Technology, Repo, Person (defaults to all)"),
       limit: z
         .number()
+        .int()
         .min(1)
         .max(50)
         .optional()
@@ -5470,86 +5556,22 @@ server.tool(
     },
   },
   async ({ query, labels, limit }) => {
-    const cap = limit ?? 20;
+    const cap = Math.floor(limit ?? 20);
     const safeLabels = (labels ?? []).filter((l) => /^[A-Za-z0-9_]+$/.test(l));
-    const labelClause =
-      safeLabels.length > 0
-        ? "AND any(label IN labels(n) WHERE label IN $labelList)"
-        : "";
 
-    const start = Date.now();
-    let searchMode: "fulltext" | "substring" = "fulltext";
+    // Delegate to kgFullTextSearch which auto-discovers fulltext indexes and
+    // falls back to CONTAINS — no hardcoded index names here.
+    const searchResult = await kgFullTextSearch(query, safeLabels, cap);
 
-    // Attempt full-text index ("portfolioSearch") first
-    const fulltextCypher = `
-      CALL db.index.fulltext.queryNodes("portfolioSearch", $q, {limit: $cap})
-      YIELD node AS n, score
-      WHERE true ${labelClause}
-      RETURN
-        labels(n)                                                    AS labels,
-        coalesce(n.name, n.title, n.login, toString(id(n)))          AS title,
-        coalesce(n.description, n.bio, n.summary, "")                AS snippet,
-        score,
-        elementId(n)                                                 AS elementId,
-        coalesce(n.url, n.html_url, n.website, "")                   AS url
-      ORDER BY score DESC
-      LIMIT $cap
-    `;
+    if (!searchResult.ok) return error(`KG search failed: ${searchResult.reason}`);
 
-    let result = await runReadCypher(fulltextCypher, {
-      q: query,
-      cap,
-      ...(safeLabels.length > 0 ? { labelList: safeLabels } : {}),
-    });
-
-    if (!result.ok) {
-      // Fall back to substring CONTAINS search
-      searchMode = "substring";
-      const substringCypher = `
-        MATCH (n)
-        WHERE (
-          toLower(coalesce(n.name, ""))        CONTAINS toLower($q) OR
-          toLower(coalesce(n.title, ""))       CONTAINS toLower($q) OR
-          toLower(coalesce(n.description, "")) CONTAINS toLower($q) OR
-          toLower(coalesce(n.login, ""))       CONTAINS toLower($q)
-        )
-        ${safeLabels.length > 0 ? "AND any(label IN labels(n) WHERE label IN $labelList)" : ""}
-        RETURN
-          labels(n)                                                  AS labels,
-          coalesce(n.name, n.title, n.login, toString(id(n)))        AS title,
-          coalesce(n.description, n.bio, n.summary, "")              AS snippet,
-          null                                                       AS score,
-          elementId(n)                                               AS elementId,
-          coalesce(n.url, n.html_url, n.website, "")                 AS url
-        LIMIT $cap
-      `;
-      result = await runReadCypher(substringCypher, {
-        q: query,
-        cap,
-        ...(safeLabels.length > 0 ? { labelList: safeLabels } : {}),
-      });
-    }
-
-    const tookMs = Date.now() - start;
-
-    if (!result.ok) return error(`KG search failed: ${result.reason}`);
-
-    const results = (result.records ?? []).map((r: Record<string, unknown>) => ({
-      labels: Array.isArray(r.labels) ? (r.labels as string[]) : [],
-      title:
-        typeof r.title === "string" ? r.title : String(r.title ?? ""),
-      snippet:
-        typeof r.snippet === "string" && r.snippet
-          ? r.snippet.slice(0, 200)
-          : undefined,
-      score:
-        typeof r.score === "number"
-          ? Math.round(r.score * 100) / 100
-          : undefined,
-      elementId:
-        typeof r.elementId === "string" ? r.elementId : undefined,
-      url:
-        typeof r.url === "string" && r.url ? r.url : undefined,
+    const results = (searchResult.records ?? []).map((r) => ({
+      labels: r.labels,
+      title: r.title,
+      snippet: r.snippet ? r.snippet.slice(0, 200) : undefined,
+      score: r.score,
+      elementId: r.elementId,
+      url: r.url,
     }));
 
     return widget({
@@ -5557,13 +5579,14 @@ server.tool(
         query,
         results,
         resultCount: results.length,
-        searchMode,
-        tookMs,
+        searchMode: searchResult.searchMode,
+        tookMs: searchResult.tookMs,
         searchLabels: safeLabels,
-        vectorEnabled: false,
+        vectorEnabled: searchResult.searchMode === "vector",
+        fulltextIndexUsed: searchResult.fulltextIndexName,
       },
       output: text(
-        `KG search "${query}" (${searchMode}): ${results.length} result${results.length !== 1 ? "s" : ""} in ${tookMs} ms.\n` +
+        `KG search "${query}" (${searchResult.searchMode}): ${results.length} result${results.length !== 1 ? "s" : ""} in ${searchResult.tookMs} ms.\n` +
           results
             .slice(0, 5)
             .map((r) => `• [${r.labels.join("/")}] ${r.title}`)
@@ -5594,4 +5617,4 @@ if (!process.env.VERCEL) {
 export { server };
 export const app = server.app;
 export default app;
-// Sun May 24 16:03:59 UTC 2026
+// Mon May 25 2026 — 48-tool build (restart trigger)

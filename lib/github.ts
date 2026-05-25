@@ -218,6 +218,156 @@ export function aggregateGitHubStats(user: GitHubUser, repos: GitHubRepo[]): Git
 }
 
 // ---------------------------------------------------------------------------
+// Public events feed
+// ---------------------------------------------------------------------------
+
+export interface GitHubEvent {
+  id: string;
+  type: string;
+  actor: { login: string; display_login: string; avatar_url: string };
+  repo: { id: number; name: string; url: string };
+  payload: Record<string, unknown>;
+  public: boolean;
+  created_at: string;
+}
+
+export interface OSSActivity {
+  id: string;
+  type: string;
+  /** Human-readable label, e.g. "Push", "PR opened", "Release" */
+  eventLabel: string;
+  repoName: string;
+  repoUrl: string;
+  detail: string | null;
+  createdAt: string;
+}
+
+function eventToActivity(e: GitHubEvent): OSSActivity {
+  let eventLabel = e.type.replace("Event", "");
+  let detail: string | null = null;
+
+  switch (e.type) {
+    case "PushEvent": {
+      const p = e.payload as { commits?: { message: string }[]; size?: number };
+      const count = p.size ?? p.commits?.length ?? 0;
+      const msg = p.commits?.[0]?.message?.split("\n")[0] ?? null;
+      eventLabel = "Push";
+      detail = msg
+        ? `${count} commit${count !== 1 ? "s" : ""}: ${msg.slice(0, 100)}`
+        : `${count} commit${count !== 1 ? "s" : ""}`;
+      break;
+    }
+    case "PullRequestEvent": {
+      const p = e.payload as {
+        action?: string;
+        pull_request?: { title?: string; number?: number };
+      };
+      eventLabel = `PR ${p.action ?? ""}`.trim();
+      detail = p.pull_request?.title ?? null;
+      break;
+    }
+    case "IssuesEvent": {
+      const p = e.payload as {
+        action?: string;
+        issue?: { title?: string };
+      };
+      eventLabel = `Issue ${p.action ?? ""}`.trim();
+      detail = p.issue?.title ?? null;
+      break;
+    }
+    case "IssueCommentEvent": {
+      const p = e.payload as { issue?: { title?: string } };
+      eventLabel = "Issue comment";
+      detail = p.issue?.title ?? null;
+      break;
+    }
+    case "CreateEvent": {
+      const p = e.payload as { ref_type?: string; ref?: string };
+      eventLabel = `Created ${p.ref_type ?? ""}`.trim();
+      detail = p.ref ? `"${p.ref}"` : null;
+      break;
+    }
+    case "ForkEvent": {
+      const p = e.payload as { forkee?: { full_name?: string } };
+      eventLabel = "Fork";
+      detail = p.forkee?.full_name ?? null;
+      break;
+    }
+    case "WatchEvent":
+      eventLabel = "Starred";
+      break;
+    case "ReleaseEvent": {
+      const p = e.payload as {
+        release?: { tag_name?: string; name?: string };
+      };
+      eventLabel = "Release";
+      detail = p.release?.tag_name ?? p.release?.name ?? null;
+      break;
+    }
+    case "PullRequestReviewEvent": {
+      const p = e.payload as {
+        review?: { state?: string };
+        pull_request?: { title?: string };
+      };
+      eventLabel = `PR review${p.review?.state ? ` (${p.review.state})` : ""}`;
+      detail = (p.pull_request as { title?: string } | undefined)?.title ?? null;
+      break;
+    }
+    default:
+      eventLabel = e.type
+        .replace("Event", "")
+        .replace(/([A-Z])/g, " $1")
+        .trim();
+  }
+
+  return {
+    id: e.id,
+    type: e.type,
+    eventLabel,
+    repoName: e.repo.name,
+    repoUrl: `https://github.com/${e.repo.name}`,
+    detail,
+    createdAt: e.created_at,
+  };
+}
+
+interface EventsCacheEntry {
+  data: OSSActivity[];
+  expiresAt: number;
+}
+
+const eventsCache = new Map<string, EventsCacheEntry>();
+const EVENTS_TTL_MS = 10 * 60 * 1000; // 10-min TTL
+
+export async function getGitHubEventsCached(
+  username: string,
+  limit = 30
+): Promise<{ ok: true; data: OSSActivity[] } | { ok: false; reason: string }> {
+  if (!username?.trim()) return { ok: false, reason: "No username provided." };
+
+  const cacheKey = `${username}:${limit}`;
+  const cached = eventsCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { ok: true, data: cached.data };
+  }
+
+  try {
+    const events = await ghFetch<GitHubEvent[]>(
+      `/users/${encodeURIComponent(username)}/events/public?per_page=${Math.min(limit, 100)}`
+    );
+    const data = events
+      .filter((e) => e.public)
+      .slice(0, limit)
+      .map(eventToActivity);
+    eventsCache.set(cacheKey, { data, expiresAt: Date.now() + EVENTS_TTL_MS });
+    return { ok: true, data };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return { ok: false, reason };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Cache layer (15-min TTL, keyed by username)
 // ---------------------------------------------------------------------------
 
