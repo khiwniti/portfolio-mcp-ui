@@ -17,8 +17,8 @@ import {
   kgTopRepos,
   kgFullTextSearch,
   kgListIndexes,
-} from "./lib/graph-v4.js";
-import { getGitHubStatsCached, getGitHubEventsCached } from "./lib/github.js";
+} from "./lib/graph-v5.js";
+import { getGitHubStatsCached, getGitHubEventsCached } from "./lib/github-v2.js";
 
 // ─── Auth0 OAuth (optional — server stays fully public when these are unset) ──
 // Set AUTH0_DOMAIN + AUTH0_CLIENT_ID to enable an oauthProxy gate on every

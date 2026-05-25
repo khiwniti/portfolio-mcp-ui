@@ -1,5 +1,5 @@
 /**
- * Neo4j Knowledge Graph adapter for the portfolio MCP server. v3
+ * Neo4j Knowledge Graph adapter for the portfolio MCP server. v5
  *
  * Connection is lazy + cached. Failures are returned as `{ ok: false, reason }`
  * rather than thrown — every KG tool can then degrade gracefully and the
