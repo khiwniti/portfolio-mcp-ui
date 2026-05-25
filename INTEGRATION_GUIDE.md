@@ -2,15 +2,15 @@
 ## Sprint-by-Sprint Implementation for khiw.dev
 
 **Status**: Ready for integration  
-**MCP Server**: `portfolio-mcp-ui` (36 tools, 30 widgets)  
+**MCP Server**: `portfolio-mcp-ui` (48 tools, 36 widgets)  
 **Endpoint**: `https://fast-pulse-37yfv.run.mcp-use.com/mcp`  
-**Timeline**: 5 sprints, 90 hours
+**Timeline**: 5 sprints, 95 hours
 
 ---
 
-> **Status update (2026-05-25):** Universal MCP UI — no external dependencies. The MCP server is live with 36 tools and 30 widgets, fully fixture-backed with zero external services. Sprint 2 is complete server-side; Sprints 1, 3, 4, and 5 are frontend/backend work in the `khiw.console v3` repository.
+> **Status update (2026-05-25):** The MCP server is live with 48 tools and 36 widgets, connected to a live Neo4j Aura knowledge graph (222k nodes, 241k relationships). Sprints 1–4 are fully implemented server-side (including JD-tailored resume export, live GitHub ingestion, OAuth-gated drafts, and semantic KG search). Sprint 5 UI integration requires work in the `khiw.console v3` repository.
 
-## Overview: The 36 Tools
+## Overview: The 48 Tools
 
 ### Tier 1 — Section Renderers (6 tools, top-level)
 All return interactive widgets that can be embedded directly:
@@ -33,7 +33,7 @@ Each tier-1 tool has 3–4 drill-down partners:
 - Open Source: `get_open_source`, `get_oss_contribution`
 - Education: `get_education`, `get_education_item`
 
-### Tier 3 — Discovery & Analytics (6 tools)
+### Tier 3 — Discovery & Analytics (6 new tools)
 For search, domain lookups, analytics:
 - `get_domains` — portfolio domain info + infrastructure
 - `get_portfolio_stats` — aggregate career/code/project stats
@@ -42,24 +42,50 @@ For search, domain lookups, analytics:
 - `search_all(query, limit?)` — global search
 - `track_event(eventName, section?, metadata?)` — analytics
 
+### Tier 4 — Knowledge Graph Tools (6 live-graph tools)
+
+These tools query the live Neo4j Aura instance (`resume-knowladge-graph`). All are optional — the server runs and all 42 portfolio tools respond with fixture data whether or not the graph is connected.
+
+- `kg_health` — connectivity check with node/relationship counts
+- `kg_schema` — labels, relationship types, and property keys
+- `kg_person_overview` — Person node summary (repos, deployments, languages)
+- `kg_skill_evidence(skill_name)` — Technology node + repos using it
+- `kg_query(cypher)` — read-only Cypher execution (non-empty string required)
+- `kg_overview` — full graph dashboard widget (node clusters, top tech, repo stats)
+
+**Live enrichment on existing tools** — 9 of the 36 portfolio tools now return a `live*` prop when the graph is reachable:
+
+| Tool | Prop | Data |
+|---|---|---|
+| `get_hero_stats` | `liveSummary` | 230 repos, 22 deployments, top languages |
+| `get_skills` | `liveTechRankings` | 60 technologies ranked by repo count |
+| `get_skill_detail` | `liveEvidence` | Technology node + repos using it |
+| `get_projects` | `liveStats` | 230 repos, 22 deployments |
+| `get_project_detail` | `liveRepo` / `liveTechStack` | Repo node + tech relationships |
+| `get_project_techstack` | `liveTechStack` | Tech stack from graph edges |
+| `get_open_source` | `liveRepoCount` / `liveTopRepos` | 230 repos, top 10 by tech breadth |
+| `get_portfolio_stats` | `liveGraphStats` | 222k nodes, 241k relationships |
+| `get_language_stat` | `liveEvidence` | Repos using the language with GitHub URLs |
+
+Set these environment variables to activate live enrichment (Vercel dashboard → Settings → Environment Variables):
+```
+NEO4J_URI=neo4j+s://<instance>.databases.neo4j.io
+NEO4J_USERNAME=<username>
+NEO4J_PASSWORD=<password>
+NEO4J_DATABASE=<database>
+```
+
 ---
 
-## Environment Variables
+## Sprint 1: Data Migration & Core Wiring (16h)
 
-No environment variables required to run.
+### Goal
+Remove all hardcoded data arrays from the portfolio codebase and replace with live MCP calls.
 
----
-
-## Sprint Plan
-
-### Sprint 1: Portfolio data migration (16h) — pending (frontend work)
-
-Replace hardcoded `PROJECTS`, `CAREER`, `SKILLS`, `PROFILE`, `STATS` in khiw.console v3 with MCP calls + loading skeletons.
-
-#### Current State (What to Replace)
+### Current State (What to Replace)
 In your portfolio code (e.g., `khiw.console v3.jsx`), you likely have:
 ```javascript
-// Hardcoded data — remove these
+// ❌ Hardcoded data — remove these
 const PROFILE = { name: "...", headline: "..." };
 const SKILLS = [{ name: "TypeScript", ... }, ...];
 const CAREER = [{ company: "Lumen", ... }, ...];
@@ -67,7 +93,7 @@ const PROJECTS = [{ id: "mcp-portfolio-kit", ... }, ...];
 const STATS = { yearsOfExperience: 8, ... };
 ```
 
-#### Task 1.1: Wire get_hero (2h)
+### Task 1.1: Wire get_hero (2h)
 Replace hardcoded hero data with live tool call.
 
 **Before:**
@@ -127,7 +153,7 @@ export function useMCPTool(toolName: string, input?: any) {
 }
 ```
 
-#### Task 1.2: Wire get_skills, get_experience, get_projects (3h)
+### Task 1.2: Wire get_skills, get_experience, get_projects (3h)
 Apply the same pattern to the three largest data arrays:
 
 ```javascript
@@ -153,7 +179,7 @@ const ProjectsSection = () => {
 };
 ```
 
-#### Task 1.3: Wire get_availability, get_contact (2h)
+### Task 1.3: Wire get_availability, get_contact (2h)
 Sticky availability strip and contact form:
 
 ```javascript
@@ -195,7 +221,7 @@ const ContactForm = () => {
 };
 ```
 
-#### Task 1.4: Add loading skeletons (2h)
+### Task 1.4: Add loading skeletons (2h)
 Create skeleton components that match the real widget proportions:
 
 ```typescript
@@ -217,7 +243,7 @@ export const SkillsSkeleton = () => (
 );
 ```
 
-#### Task 1.5: Add error boundaries & fallbacks (2h)
+### Task 1.5: Add error boundaries & fallbacks (2h)
 Every MCP call can fail; add graceful degradation:
 
 ```javascript
@@ -237,7 +263,7 @@ const ErrorState = ({ error, section }) => (
 );
 ```
 
-#### Task 1.6: Verify data parity (2h)
+### Task 1.6: Verify data parity (2h)
 Once all sections are live, compare rendered output with current static version:
 - Do all skill names match?
 - Are project descriptions identical?
@@ -248,7 +274,7 @@ Once all sections are live, compare rendered output with current static version:
 
 ---
 
-### Sprint 2: Missing API tools — COMPLETE
+## Sprint 2: 6 New MCP Tools — COMPLETE ✓
 
 **Status**: Done. All 6 tools built, tested, and verified.
 
@@ -256,20 +282,83 @@ Once all sections are live, compare rendered output with current static version:
 |---|---|---|
 | `get_domains` | Infrastructure info for recruiter transparency | Optional (nice-to-have) |
 | `get_portfolio_stats` | Aggregate stats card (tenure, OSS reach, etc.) | Optional (nice-to-have) |
-| `list_posts` | Blog/writing list with category filters | Sprint 4 |
-| `search_content` | Search within sections | Sprint 4 |
-| `search_all` | Global search (used by Claude API) | Sprint 5 |
-| `track_event` | Analytics tracking | Sprint 3 |
+| `list_posts` | Blog/writing list with category filters | Task 2.2 |
+| `search_content` | Search within sections | Task 2.3 |
+| `search_all` | Global search (used by Claude API) | Task 3.5 |
+| `track_event` | Analytics tracking | Task 3.1 |
 
-**Ready to use:** You can integrate `list_posts` into Sprint 1 if you have a blog section, or defer to Sprint 4.
+**Ready to use:** You can integrate `list_posts` into Sprint 1 if you have a blog section, or defer to Sprint 3.
 
 ---
 
-### Sprint 3: Drill-down modals (24h) — pending (frontend work)
+## Sprint 4: Live Data Ingestion — COMPLETE ✓ (server-side)
 
-Wire every skill pill, role card, project tile to call the appropriate `get_*_detail` tool and open a modal.
+**Status**: All tools built, tested, and verified. Integration into `khiw.console v3` is a Sprint 5 task.
 
-#### Task 3.1: Skill Detail Modal (4h)
+| Tool | What it does | Live data source |
+|---|---|---|
+| `get_github_stats` | Repo count, language breakdown, star/fork totals | GitHub REST API (15-min cache) |
+| `get_oss_feed` | Latest public GitHub events (push, PR, issues) | GitHub public events API (10-min cache) |
+| `get_drafts` | List saved content drafts | In-memory store (protected by `DRAFTS_API_KEY`) |
+| `save_draft` | Create or update a draft | In-memory store (protected by `DRAFTS_API_KEY`) |
+
+**Environment variables needed:**
+
+```env
+GITHUB_TOKEN=ghp_...          # Optional but recommended — raises rate limit to 5000 req/h
+GITHUB_USERNAME=khiwniti      # Account whose stats and events are fetched
+DRAFTS_API_KEY=your-secret    # Required; requests without it receive a 401-style error response
+```
+
+---
+
+## Sprint 5: AI-Powered Export & Semantic Search — COMPLETE ✓ (server-side)
+
+**Status**: Both tools built, tested, and verified. Widget integration into `khiw.console v3` is pending.
+
+| Tool | What it does | Notes |
+|---|---|---|
+| `get_resume_pdf` | JD keyword match scoring + tailored resume JSON | Pass a job description; receive match %, matched keywords, gaps, and a filtered resume payload |
+| `kg_semantic_search` | 3-tier KG search: vector → fulltext → substring | Requires `OPENAI_API_KEY` for vector tier; gracefully degrades without it |
+
+**Integration recipe — JD-tailored resume download:**
+
+```typescript
+const result = await session.callTool({
+  name: "get_resume_pdf",
+  arguments: {
+    jobDescription: "Staff Engineer with TypeScript and Kubernetes experience",
+    format: "json",
+    sections: ["experience", "projects", "skills"],
+  },
+});
+
+const { matchScore, matchedKeywords, missingKeywords, resume } = result.structuredContent;
+// matchScore: 0.50, matchedKeywords: ["typescript","kubernetes","engineer"]
+// resume: filtered subset of portfolio data ranked by relevance
+```
+
+**Integration recipe — semantic search:**
+
+```typescript
+const result = await session.callTool({
+  name: "kg_semantic_search",
+  arguments: { query: "TypeScript backend API", labels: ["Technology", "Repo"], limit: 10 },
+});
+
+const { results, vectorEnabled, searchTier } = result.structuredContent;
+// searchTier: "substring" | "fulltext" | "vector"
+// results: [{ type, name, properties }]
+```
+
+---
+
+## Sprint 3: Modal Drills & Interactivity (20h)
+
+### Goal
+Turn flat sections into deep-drill experiences. When a recruiter clicks a skill, role, or project, a modal opens with the next level of detail.
+
+### Task 3.1: Skill Detail Modal (4h)
 When user clicks a skill chip, open a modal with deep context:
 
 ```javascript
@@ -339,7 +428,7 @@ const SkillDetailModal = ({ skillName, onClose }) => {
 };
 ```
 
-#### Task 3.2: Role Detail Modal (4h)
+### Task 3.2: Role Detail Modal (4h)
 Click a role card to expand achievements, decisions, and impact metrics:
 
 ```javascript
@@ -418,7 +507,7 @@ const RoleDetailModal = ({ roleId, onDrill }) => {
 };
 ```
 
-#### Task 3.3: Project Deep-Dive (4h)
+### Task 3.3: Project Deep-Dive (4h)
 Click a project to explore tech stack, modules, metrics:
 
 ```javascript
@@ -481,7 +570,7 @@ const ProjectDetailModal = ({ projectId, onDrill }) => {
 };
 ```
 
-#### Task 3.4: Hover Evidence Highlighting (4h)
+### Task 3.4: Hover Evidence Highlighting (4h)
 When hovering a skill, highlight all roles/projects where it was used:
 
 ```javascript
@@ -517,7 +606,7 @@ const SkillsGridWithHighlight = () => {
 };
 ```
 
-#### Task 3.5: Ask AI per Section (4h)
+### Task 3.5: Ask AI per Section (4h)
 Add a small "Ask AI" button on each section. When clicked, send section context to Claude:
 
 ```javascript
@@ -580,32 +669,12 @@ const SectionAskAI = ({ sectionName, sectionContext }) => {
 
 ---
 
-### Sprint 4: Native sections (22h) — pending (frontend work)
+## Sprint 4: Claude API Integration (24h)
 
-Surface the Availability strip, Contact section, FAQ list, blog list, and global search bar as first-class navigation entries in khiw.console v3.
+### Goal
+Wire the MCP server into your Claude API `/api/chat` so the AI assistant can call tools and access context.
 
-#### Task 4.1: Availability strip (3h)
-Sticky availability strip on every page using `get_availability` + `get_availability_detail`.
-
-#### Task 4.2: Contact section (5h)
-Full contact section that combines `get_contact`, `get_contact_channel`, and `submit_contact_message` for write-back.
-
-#### Task 4.3: FAQ list (4h)
-Use `get_contact_faq` and `get_contact_faq_item` to render a collapsible FAQ panel.
-
-#### Task 4.4: Blog list (5h)
-Wire `list_posts` (with category/tag filters) into a dedicated `/writing` route.
-
-#### Task 4.5: Global search bar (5h)
-Top-bar search powered by `search_all` and `search_content`, with section facets and keyboard shortcuts (cmd-K).
-
----
-
-### Sprint 5: Claude API mcp_servers integration (12h) — pending (backend work)
-
-Replace the static system prompt with live MCP tool routing via Claude API's `mcp_servers` field. The chat gets the 36-tool surface — that alone is the value.
-
-#### Task 5.1: Register MCP server in Anthropic SDK (4h)
+### Task 4.1: Register MCP in Anthropic SDK (4h)
 
 ```typescript
 // api/chat.ts (or similar)
@@ -614,6 +683,13 @@ import Anthropic from '@anthropic-ai/sdk';
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+// Define MCP server endpoint
+const mcpServers = {
+  'portfolio-mcp-ui': {
+    url: 'https://fast-pulse-37yfv.run.mcp-use.com/mcp',
+  },
+};
 
 export async function handleChatRequest(messages, options) {
   const response = await client.messages.create({
@@ -629,14 +705,13 @@ When the user asks questions about the portfolio:
 1. Use search_all or search_content to find relevant information
 2. Drill into specific sections as needed
 3. Cite evidence from the portfolio in your response
-4. Suggest related skills/projects/roles when appropriate`,
+4. Suggest related skills/projects/roles when appropriate
+
+Current user context: They are evaluating the candidate for a [ROLE] position.`,
     messages,
-    mcp_servers: [
-      {
-        type: 'url',
-        url: 'https://fast-pulse-37yfv.run.mcp-use.com/mcp',
-        name: 'portfolio-mcp-ui',
-      },
+    tools: [
+      // Auto-generated from MCP server tools list
+      // See Task 4.2
     ],
   });
 
@@ -644,13 +719,240 @@ When the user asks questions about the portfolio:
 }
 ```
 
-#### Task 5.2: Streaming + tool result rendering (4h)
-Surface MCP tool results inline in the chat UI as cards (one card per tool call), with a fallback to text-only when streaming a non-MCP turn.
+### Task 4.2: Auto-Generate Tool Definitions (4h)
 
-#### Task 5.3: Analytics + safety (4h)
-- Call `track_event` for each user turn and each MCP tool invocation
-- Add a rate limit per session
-- Cap conversation length
+```typescript
+// lib/mcp-tools-schema.ts
+
+export async function generateMCPToolDefinitions() {
+  // Call portfolio-mcp-ui tools/list endpoint
+  const response = await fetch('https://fast-pulse-37yfv.run.mcp-use.com/mcp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: {},
+    }),
+  });
+
+  const data = await response.json();
+
+  // Convert MCP tool definitions to Claude tool schema
+  return data.result.tools.map(tool => ({
+    name: tool.name,
+    description: tool.description,
+    input_schema: {
+      type: 'object',
+      properties: tool.inputSchema.properties || {},
+      required: tool.inputSchema.required || [],
+    },
+  }));
+}
+```
+
+### Task 4.3: Handle Tool Calls (8h)
+
+```typescript
+// api/chat.ts (continued)
+
+export async function handleToolCall(toolName: string, toolInput: any) {
+  const response = await fetch('https://fast-pulse-37yfv.run.mcp-use.com/mcp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'tools/call',
+      params: {
+        name: toolName,
+        arguments: toolInput,
+      },
+    }),
+  });
+
+  const result = await response.json();
+
+  return {
+    type: 'tool_result',
+    tool_use_id: toolName, // from the request
+    content: JSON.stringify(result.result.content[0]),
+  };
+}
+
+// Streaming chat with tool use
+export async function streamChatWithTools(messages, onChunk) {
+  const allTools = await generateMCPToolDefinitions();
+
+  const response = await client.messages.create({
+    model: 'claude-3-5-sonnet-20241022',
+    max_tokens: 2048,
+    system: 'You are a portfolio assistant...',
+    messages,
+    tools: allTools,
+    stream: true,
+  });
+
+  let currentMessage = [];
+  let toolUses = [];
+
+  for await (const event of response) {
+    if (event.type === 'content_block_delta') {
+      onChunk(event.delta);
+
+      // Track tool use blocks
+      if (event.delta.type === 'input_json_delta') {
+        toolUses.push(event.delta);
+      }
+    }
+
+    if (event.type === 'message_delta' && event.usage) {
+      // Handle tool calls after message is complete
+      // See Task 4.4
+    }
+  }
+
+  return toolUses;
+}
+```
+
+### Task 4.4: Agentic Loop (8h)
+
+```typescript
+// lib/agentic-chat.ts
+
+export async function agenticChat(userMessage: string, conversationHistory: any[]) {
+  let messages = [...conversationHistory, { role: 'user', content: userMessage }];
+  let iterations = 0;
+  const maxIterations = 5;
+
+  while (iterations < maxIterations) {
+    const response = await client.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 2048,
+      system: 'You are a portfolio assistant...',
+      messages,
+      tools: await generateMCPToolDefinitions(),
+    });
+
+    iterations++;
+
+    // Check if there's a stop reason of "tool_use"
+    if (response.stop_reason !== 'tool_use') {
+      // Final response, return it
+      return {
+        messages: [...messages, { role: 'assistant', content: response.content }],
+        finalResponse: response.content.find((c) => c.type === 'text')?.text,
+      };
+    }
+
+    // Process tool uses
+    const toolUseBlocks = response.content.filter((c) => c.type === 'tool_use');
+    let toolResults = [];
+
+    for (const toolUse of toolUseBlocks) {
+      const result = await handleToolCall(toolUse.name, toolUse.input);
+      toolResults.push({
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content: result.content,
+      });
+    }
+
+    // Add assistant response and tool results to messages
+    messages.push({
+      role: 'assistant',
+      content: response.content,
+    });
+    messages.push({
+      role: 'user',
+      content: toolResults,
+    });
+  }
+
+  throw new Error(`Max iterations (${maxIterations}) exceeded`);
+}
+```
+
+---
+
+## Sprint 5: Polish & Deployment (23h)
+
+### Task 5.1: Performance Optimization (6h)
+- Add response caching: cache `get_hero`, `get_skills`, `get_projects` for 1h
+- Pre-warm critical tools on page load
+- Implement pagination for `list_posts`, large search results
+- Lazy-load drill modals (don't fetch until opened)
+
+```typescript
+const cache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 3600000; // 1 hour
+
+function useMCPToolCached(toolName: string, input?: any) {
+  const cacheKey = `${toolName}:${JSON.stringify(input || {})}`;
+  const cached = cache.get(cacheKey);
+
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return { data: cached.data, loading: false };
+  }
+
+  // Fetch fresh
+  const { data, loading } = useMCPTool(toolName, input);
+
+  if (data && !loading) {
+    cache.set(cacheKey, { data, timestamp: Date.now() });
+  }
+
+  return { data, loading };
+}
+```
+
+### Task 5.2: Accessibility & Core Web Vitals (5h)
+- ARIA labels on all drill modals & buttons
+- Keyboard navigation (Tab through skill chips, arrow keys in timeline)
+- Test LCP, FID, CLS targets
+- Ensure error states are announced to screen readers
+
+### Task 5.3: Mobile Responsiveness (4h)
+- Modal drill-down UX on mobile (might be bottom sheet instead of center modal)
+- Sticky availability strip only on desktop (move to header on mobile)
+- Single-column layout for projects on small screens
+
+### Task 5.4: Analytics Integration (4h)
+- Call `track_event` on every MCP tool invocation
+- Track drill paths (e.g., skills → skill detail → related project)
+- Track search queries
+- Send anonymized event data to Posthog or similar
+
+```typescript
+function useMCPToolWithTracking(toolName: string, input?: any) {
+  const { data, loading } = useMCPTool(toolName, input);
+
+  React.useEffect(() => {
+    if (data) {
+      track_event({
+        eventName: `tool_${toolName}`,
+        section: toolName.split('_')[1] || 'general',
+        metadata: { input, resultSize: JSON.stringify(data).length },
+      });
+    }
+  }, [data]);
+
+  return { data, loading };
+}
+```
+
+### Task 5.5: Error Recovery & Fallbacks (2h)
+- If MCP server is down, serve cached data (stale-while-revalidate)
+- Graceful degradation: show static hardcoded fallback if cache is empty
+- Retry logic with exponential backoff
+
+### Task 5.6: Documentation & Launch (2h)
+- Update portfolio README with "This is MCP-powered"
+- Add `/tools` endpoint that lists all available MCP tools
+- Add `/api/mcp` proxy endpoint for easy access
+- Update `robots.txt` and social cards with live metadata
 
 ---
 
@@ -676,10 +978,10 @@ Surface MCP tool results inline in the chat UI as cards (one card per tool call)
 - [ ] Design modal component library (Tailwind/Headless UI)
 - [ ] Sketch drill-path user flows
 
-### Before Sprint 5
-- [ ] Apply for Claude API access if not already approved
+### Before Sprint 4
+- [ ] Apply for Claude API beta if not already approved
 - [ ] Set up `/api/chat` endpoint
-- [ ] Verify the MCP endpoint is reachable from your serverless region
+- [ ] Test agentic loop with dummy tools first
 
 ---
 
@@ -724,11 +1026,11 @@ Surface MCP tool results inline in the chat UI as cards (one card per tool call)
 - Check if server is running: `curl https://fast-pulse-37yfv.run.mcp-use.com/mcp -X POST`
 
 ### "Tool returns unexpected schema"
-- Regenerate tool definitions from `tools/list`
+- Regenerate tool definitions in Task 4.2
 - Check `tools/list` response matches expected shape
 
 ### "Modal drills are slow"
-- Implement caching (1h TTL for `get_hero`, `get_skills`, `get_projects`)
+- Implement caching (Task 5.1)
 - Pre-fetch related data when opening parent modal
 - Lazy-load images in project cards
 
@@ -739,23 +1041,17 @@ Surface MCP tool results inline in the chat UI as cards (one card per tool call)
 
 ---
 
-## Roadmap / Future Work
-
-- Optional adapter pattern for live data sources (CMS, REST, GraphQL) — out of scope for v1
-- Additional widget themes (dark mode, print)
-- Multi-tenant fixture packs for re-use beyond khiw.dev
-
----
-
 ## Next Steps
 
 1. **Week 1**: Complete Sprint 1 (data migration)
 2. **Week 2**: Deploy live + measure engagement
 3. **Week 3-4**: Sprint 3 (drills & interactivity)
-4. **Week 5**: Sprint 4 (native sections)
-5. **Week 6**: Sprint 5 (Claude API mcp_servers)
+4. **Week 5-6**: Sprint 4 (Claude API)
+5. **Week 7**: Sprint 5 (polish & launch)
 
-**Total**: ~6 weeks, ~90 hours of focused engineering.
+**Total**: ~12 weeks, ~95 hours of focused engineering.
+
+Good luck! Your portfolio will be unlike anything a recruiter has seen before.
 
 ---
 

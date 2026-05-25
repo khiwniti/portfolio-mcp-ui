@@ -31,6 +31,15 @@ const projectSchema = z.object({
 
 const propsSchema = z.object({
   projects: z.array(projectSchema),
+  liveStats: z
+    .object({
+      reposAuthored: z.number(),
+      deploymentsOwned: z.number(),
+      topLanguages: z.array(
+        z.object({ language: z.string(), repoCount: z.number() })
+      ),
+    })
+    .optional(),
 });
 
 type Props = z.infer<typeof propsSchema>;
@@ -119,6 +128,97 @@ export default function ProjectsShowcase() {
           </p>
         </header>
 
+        {props.liveStats && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: isMobile ? 6 : 8,
+              padding: isMobile ? "7px 12px" : "8px 14px",
+              marginBottom: 16,
+              borderRadius: 8,
+              border: `1px solid ${colors.border}`,
+              backgroundColor: colors.surface,
+            }}
+          >
+            {/* Live indicator + label */}
+            <span style={{ display: "flex", alignItems: "center", gap: 6, marginRight: 4 }}>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  backgroundColor: "#059669",
+                  flexShrink: 0,
+                  boxShadow: "0 0 0 2px rgba(5,150,105,0.25)",
+                }}
+              />
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: 0.8,
+                  textTransform: "uppercase",
+                  color: "#059669",
+                }}
+              >
+                Live Graph
+              </span>
+            </span>
+
+            {/* Repos stat chip */}
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 500,
+                padding: "2px 9px",
+                borderRadius: 999,
+                border: `1px solid ${colors.border}`,
+                backgroundColor: colors.surfaceAlt,
+                color: colors.text,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {props.liveStats.reposAuthored} repos
+            </span>
+
+            {/* Deployments stat chip */}
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 500,
+                padding: "2px 9px",
+                borderRadius: 999,
+                border: `1px solid ${colors.border}`,
+                backgroundColor: colors.surfaceAlt,
+                color: colors.text,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {props.liveStats.deploymentsOwned} deployments
+            </span>
+
+            {/* Top-3 language pills */}
+            {props.liveStats.topLanguages.slice(0, 3).map((lang) => (
+              <span
+                key={lang.language}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 500,
+                  padding: "2px 9px",
+                  borderRadius: 999,
+                  border: `1px solid ${colors.border}`,
+                  backgroundColor: colors.accentSoft,
+                  color: colors.accent,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {lang.language} ×{lang.repoCount}
+              </span>
+            ))}
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
           <button

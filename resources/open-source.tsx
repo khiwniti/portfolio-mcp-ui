@@ -23,6 +23,16 @@ const propsSchema = z.object({
       description: z.string(),
     })
   ),
+  liveRepoCount: z.number().optional(),
+  liveTopRepos: z.array(
+    z.object({
+      slug: z.string(),
+      label: z.string(),
+      url: z.string(),
+      language: z.string().nullable().optional(),
+      techCount: z.number(),
+    })
+  ).optional(),
 });
 
 type Props = z.infer<typeof propsSchema>;
@@ -115,6 +125,62 @@ export default function OpenSource() {
             </div>
           ))}
         </div>
+
+        {props.liveTopRepos && props.liveTopRepos.length > 0 && (
+          <div
+            style={{
+              padding: "clamp(12px, 3vw, 20px)",
+              border: `1px solid ${c.border}`,
+              borderRadius: 8,
+              backgroundColor: c.panel,
+              marginBottom: 18,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  backgroundColor: "#22c55e",
+                  flexShrink: 0,
+                  display: "inline-block",
+                }}
+              />
+              <span style={{ fontSize: 13, fontWeight: 600 }}>LIVE · Knowledge Graph</span>
+            </div>
+            {props.liveRepoCount !== undefined && (
+              <div style={{ fontSize: 12, color: c.sub, marginBottom: 12 }}>
+                {props.liveRepoCount} repos in graph
+              </div>
+            )}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {props.liveTopRepos.slice(0, 8).map((repo) => (
+                <a
+                  key={repo.slug}
+                  href={repo.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    textDecoration: "none",
+                    border: `1px solid ${c.border}`,
+                    borderRadius: 6,
+                    padding: "6px 10px",
+                    backgroundColor: c.bg,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    flexDirection: "column",
+                    alignItems: "flex-start",
+                    gap: 2,
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 500, color: c.text }}>{repo.label}</span>
+                  <span style={{ fontSize: 11, color: c.sub }}>{repo.language ?? ""}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, color: c.sub, marginBottom: 8 }}>
           Notable contributions
