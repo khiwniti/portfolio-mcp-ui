@@ -21,6 +21,7 @@
     "vercel-build": "mcp-use build"
   },
   "dependencies": {
+    "@vercel/sandbox": "^2.0.0",
     "hono": "^4.12.22",
     "mcp-use": "latest",
     "neo4j-driver": "^6.0.1",

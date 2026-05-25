@@ -1,5 +1,15 @@
 import { MCPServer, widget, text, error, object } from "mcp-use/server";
 import { z } from "zod";
+import {
+  sandboxConfigured,
+  createSandbox,
+  runInSandbox,
+  writeSandboxFiles,
+  stopSandbox,
+  registrySnapshot,
+  registryGet,
+  getSandboxDomain,
+} from "./lib/sandbox-final.js";
 
 const server = new MCPServer({
   name: "portfolio-mcp-ui",
@@ -4330,6 +4340,331 @@ server.tool(
     console.log(`[Analytics] ${JSON.stringify(event)}`);
 
     return text(`Event tracked: ${eventName}${section ? ` (${section})` : ""}`);
+  }
+);
+
+/* ------------------------------------------------------------------ */
+/* VERCEL SANDBOX TOOLS                                               */
+/* Opt-in: degrade gracefully when VERCEL_TOKEN/TEAM_ID/PROJECT_ID    */
+/* are absent. The 36 portfolio tools above keep working regardless. */
+/* ------------------------------------------------------------------ */
+
+function notConfiguredCard(reason: string) {
+  return widget({
+    props: {
+      breadcrumb: ["Tools", "Sandbox", "Console"],
+      configured: false,
+      notConfiguredReason: reason,
+      total: 0,
+      running: 0,
+      stopped: 0,
+      errored: 0,
+      sandboxes: [],
+    },
+    output: text(`Vercel Sandbox not configured: ${reason}`),
+  });
+}
+
+const NOT_CONFIGURED_REASON =
+  "Set VERCEL_TOKEN, VERCEL_TEAM_ID, and VERCEL_PROJECT_ID env vars (Vercel dashboard → Settings → Tokens). The portfolio tools work without these — sandbox tools are opt-in.";
+
+/* Tool S1: sandbox_console — registry view */
+server.tool(
+  {
+    name: "sandbox_console",
+    description:
+      "Show the Vercel Sandbox console for this MCP server: every sandbox spawned in this process, its status, recent commands, and credential health. Returns a widget that degrades gracefully when VERCEL_* env vars are absent.",
+    schema: z.object({}),
+    widget: { name: "sandbox-console", invoking: "Loading sandbox console..." },
+  },
+  async () => {
+    if (!sandboxConfigured()) return notConfiguredCard(NOT_CONFIGURED_REASON);
+    const snapshot = registrySnapshot();
+    const running = snapshot.filter((s) => s.status === "running").length;
+    const stopped = snapshot.filter((s) => s.status === "stopped").length;
+    const errored = snapshot.filter((s) => s.status === "error").length;
+    return widget({
+      props: {
+        breadcrumb: ["Tools", "Sandbox", "Console"],
+        configured: true,
+        total: snapshot.length,
+        running,
+        stopped,
+        errored,
+        sandboxes: snapshot.map((s) => ({
+          id: s.id,
+          createdAt: s.createdAt,
+          runtime: s.runtime,
+          source: s.source,
+          ports: s.ports,
+          status: s.status,
+          lastError: s.lastError,
+          history: s.history.map((h) => ({
+            id: h.id,
+            command: h.command,
+            args: h.args,
+            exitCode: h.exitCode,
+            durationMs: h.durationMs,
+            startedAt: h.startedAt,
+          })),
+        })),
+      },
+      output: text(
+        `Sandbox console: ${snapshot.length} total, ${running} running, ${stopped} stopped, ${errored} errored.`
+      ),
+    });
+  }
+);
+
+/* Tool S2: sandbox_create */
+server.tool(
+  {
+    name: "sandbox_create",
+    description:
+      "Spawn a new Vercel Sandbox. Optionally clone a git repo or download a tarball, expose ports, and choose a runtime. Returns the sandbox detail widget. Requires VERCEL_TOKEN/TEAM_ID/PROJECT_ID.",
+    schema: z.object({
+      name: z.string().optional().describe("Human-readable name for the sandbox"),
+      runtime: z
+        .string()
+        .optional()
+        .describe(
+          "Runtime image (e.g. 'node22', 'python3.13'). Defaults to Vercel's standard base image."
+        ),
+      gitUrl: z
+        .string()
+        .optional()
+        .describe("Optional git clone URL — checked out at sandbox start"),
+      gitRevision: z
+        .string()
+        .optional()
+        .describe("Git ref/SHA (used only when gitUrl is provided)"),
+      tarballUrl: z
+        .string()
+        .optional()
+        .describe("Tarball URL — extracted into the sandbox root (alternative to gitUrl)"),
+      ports: z
+        .array(z.number().int().min(1).max(65535))
+        .optional()
+        .describe("Ports to expose with public URLs (e.g. [3000])"),
+      timeoutMs: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Auto-stop after this many milliseconds (Vercel max: ~45 min)"),
+      vcpus: z
+        .number()
+        .int()
+        .min(1)
+        .max(8)
+        .optional()
+        .describe("Allocated vCPUs (1–8)"),
+    }),
+    widget: { name: "sandbox-detail", invoking: "Creating sandbox..." },
+  },
+  async (input) => {
+    if (!sandboxConfigured()) {
+      return error(NOT_CONFIGURED_REASON);
+    }
+    const source = input.gitUrl
+      ? { type: "git" as const, url: input.gitUrl, revision: input.gitRevision }
+      : input.tarballUrl
+        ? { type: "tarball" as const, url: input.tarballUrl }
+        : undefined;
+    const result = await createSandbox({
+      name: input.name,
+      runtime: input.runtime,
+      source,
+      ports: input.ports,
+      timeoutMs: input.timeoutMs,
+      vcpus: input.vcpus,
+    });
+    if (!result.ok) {
+      return error(`sandbox_create failed: ${result.reason}`);
+    }
+    const rec = result.data;
+    const domains = (rec.ports ?? []).flatMap((p) => {
+      const url = getSandboxDomain(rec.id, p);
+      return url ? [{ port: p, url }] : [];
+    });
+    return widget({
+      props: {
+        breadcrumb: ["Tools", "Sandbox", rec.id],
+        id: rec.id,
+        createdAt: rec.createdAt,
+        runtime: rec.runtime,
+        source: rec.source,
+        status: rec.status,
+        ports: rec.ports,
+        domains,
+        lastError: rec.lastError,
+        history: [],
+      },
+      output: text(
+        `Sandbox ${rec.id} created in ${result.tookMs}ms. Status: ${rec.status}. Ports: ${rec.ports.join(", ") || "none"}.`
+      ),
+    });
+  }
+);
+
+/* Tool S3: sandbox_run */
+server.tool(
+  {
+    name: "sandbox_run",
+    description:
+      "Run a shell command inside a previously created Vercel sandbox. Returns the captured stdout/stderr, exit code and duration as a terminal-style widget. Get the sandbox id from sandbox_create or sandbox_console.",
+    schema: z.object({
+      sandboxId: z.string().min(1).describe("Sandbox id returned by sandbox_create"),
+      command: z.string().min(1).describe("Command to run (e.g. 'ls', 'node', 'npm')"),
+      args: z
+        .array(z.string())
+        .optional()
+        .describe("Command arguments (e.g. ['-la', '/tmp'])"),
+    }),
+    widget: { name: "sandbox-command-result", invoking: "Running command..." },
+  },
+  async ({ sandboxId, command, args }) => {
+    if (!sandboxConfigured()) {
+      return error(NOT_CONFIGURED_REASON);
+    }
+    const result = await runInSandbox(sandboxId, command, args ?? []);
+    if (!result.ok) {
+      return error(`sandbox_run failed: ${result.reason}`);
+    }
+    const entry = result.data;
+    return widget({
+      props: {
+        breadcrumb: ["Tools", "Sandbox", sandboxId, "Command"],
+        sandboxId,
+        command: entry.command,
+        args: entry.args,
+        exitCode: entry.exitCode,
+        durationMs: entry.durationMs,
+        stdout: entry.stdout,
+        stderr: entry.stderr,
+        startedAt: entry.startedAt,
+      },
+      output: text(
+        `Ran '${entry.command} ${entry.args.join(" ")}' in ${entry.durationMs}ms. Exit code ${entry.exitCode ?? "—"}.`
+      ),
+    });
+  }
+);
+
+/* Tool S4: sandbox_write_files */
+server.tool(
+  {
+    name: "sandbox_write_files",
+    description:
+      "Write or replace one or more files inside a Vercel sandbox. File mode defaults to 0o644 if omitted. Returns a confirmation with the list of written paths.",
+    schema: z.object({
+      sandboxId: z.string().min(1).describe("Sandbox id"),
+      files: z
+        .array(
+          z.object({
+            path: z.string().min(1).describe("Absolute path inside the sandbox"),
+            content: z.string().describe("File contents (UTF-8)"),
+            mode: z
+              .number()
+              .int()
+              .optional()
+              .describe("POSIX file mode (e.g. 0o755 for executables)"),
+          })
+        )
+        .min(1)
+        .describe("Files to write"),
+    }),
+  },
+  async ({ sandboxId, files }) => {
+    if (!sandboxConfigured()) {
+      return error(NOT_CONFIGURED_REASON);
+    }
+    const result = await writeSandboxFiles(sandboxId, files);
+    if (!result.ok) {
+      return error(`sandbox_write_files failed: ${result.reason}`);
+    }
+    return object({
+      sandboxId,
+      written: result.data.written,
+      paths: result.data.paths,
+      tookMs: result.tookMs,
+    });
+  }
+);
+
+/* Tool S5: sandbox_stop */
+server.tool(
+  {
+    name: "sandbox_stop",
+    description:
+      "Stop a running Vercel sandbox and release its resources. Idempotent — calling on an already-stopped sandbox returns success.",
+    schema: z.object({
+      sandboxId: z.string().min(1).describe("Sandbox id"),
+    }),
+  },
+  async ({ sandboxId }) => {
+    if (!sandboxConfigured()) {
+      return error(NOT_CONFIGURED_REASON);
+    }
+    const result = await stopSandbox(sandboxId);
+    if (!result.ok) {
+      return error(`sandbox_stop failed: ${result.reason}`);
+    }
+    return text(`Sandbox ${sandboxId} stopped in ${result.tookMs}ms.`);
+  }
+);
+
+/* Tool S6: sandbox_status (deep drill into one sandbox) */
+server.tool(
+  {
+    name: "sandbox_status",
+    description:
+      "Get the full status of a single Vercel sandbox: runtime, public URLs, every command in history with stdout/stderr, and any error state. Renders the sandbox detail widget.",
+    schema: z.object({
+      sandboxId: z.string().min(1).describe("Sandbox id"),
+    }),
+    widget: { name: "sandbox-detail", invoking: "Loading sandbox..." },
+  },
+  async ({ sandboxId }) => {
+    if (!sandboxConfigured()) {
+      return error(NOT_CONFIGURED_REASON);
+    }
+    const rec = registryGet(sandboxId);
+    if (!rec) {
+      return error(
+        `Unknown sandbox ${sandboxId}. Sandboxes are tracked per-process — list them with sandbox_console.`
+      );
+    }
+    const domains = (rec.ports ?? []).flatMap((p) => {
+      const url = getSandboxDomain(sandboxId, p);
+      return url ? [{ port: p, url }] : [];
+    });
+    return widget({
+      props: {
+        breadcrumb: ["Tools", "Sandbox", sandboxId],
+        id: rec.id,
+        createdAt: rec.createdAt,
+        runtime: rec.runtime,
+        source: rec.source,
+        status: rec.status,
+        ports: rec.ports,
+        domains,
+        lastError: rec.lastError,
+        history: rec.history.map((h) => ({
+          id: h.id,
+          command: h.command,
+          args: h.args,
+          stdout: h.stdout,
+          stderr: h.stderr,
+          exitCode: h.exitCode,
+          durationMs: h.durationMs,
+          startedAt: h.startedAt,
+        })),
+      },
+      output: text(
+        `Sandbox ${sandboxId} — ${rec.status}, ${rec.history.length} command${rec.history.length === 1 ? "" : "s"} run.`
+      ),
+    });
   }
 );
 
