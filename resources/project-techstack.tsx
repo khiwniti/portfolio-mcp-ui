@@ -42,7 +42,6 @@ const propsSchema = z.object({
     z.object({ id: z.string(), name: z.string(), purpose: z.string() })
   ),
   notableLibs: z.array(z.object({ name: z.string(), purpose: z.string() })),
-  liveTechStack: z.array(z.object({ slug: z.string(), label: z.string(), confidence: z.number() })).optional(),
 });
 
 type Props = z.infer<typeof propsSchema>;
@@ -262,56 +261,6 @@ export default function ProjectTechstack() {
                   <span style={{ color: c.sub, textAlign: "right", wordBreak: "break-word", overflowWrap: "anywhere" }}>{l.purpose}</span>
                 </div>
               ))}
-            </div>
-          </section>
-        )}
-
-        {/* LIVE Knowledge Graph */}
-        {props.liveTechStack && props.liveTechStack.length > 0 && (
-          <section style={{ marginBottom: 18 }}>
-            <div
-              style={{
-                padding: "clamp(12px, 3vw, 20px)",
-                border: `1px solid ${c.border}`,
-                borderRadius: 6,
-                backgroundColor: c.panel,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    backgroundColor: "#22c55e",
-                    flexShrink: 0,
-                  }}
-                />
-                <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: 0.2 }}>
-                  LIVE · Knowledge Graph
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: c.sub, marginBottom: 12 }}>
-                Technologies detected in repository
-              </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {props.liveTechStack.slice(0, 15).map((tech) => (
-                  <span
-                    key={tech.slug}
-                    style={{
-                      padding: "3px 10px",
-                      border: `1px solid ${c.border}`,
-                      borderRadius: 999,
-                      fontSize: 12,
-                      color: c.text,
-                      backgroundColor: "transparent",
-                      wordBreak: "break-word",
-                    }}
-                  >
-                    {tech.label}
-                  </span>
-                ))}
-              </div>
             </div>
           </section>
         )}

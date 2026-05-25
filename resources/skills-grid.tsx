@@ -29,9 +29,6 @@ const skillSchema = z.object({
 const propsSchema = z.object({
   categories: z.array(z.string()),
   skills: z.array(skillSchema),
-  liveTechRankings: z
-    .array(z.object({ slug: z.string(), label: z.string(), reposUsing: z.number() }))
-    .optional(),
 });
 
 type Props = z.infer<typeof propsSchema>;
@@ -138,67 +135,6 @@ export default function SkillsGrid() {
           })}
         </div>
 
-        {props.liveTechRankings && props.liveTechRankings.length > 0 && (
-          <div
-            style={{
-              marginBottom: 18,
-              padding: "clamp(12px, 3vw, 16px)",
-              borderRadius: 12,
-              border: `1px solid ${colors.border}`,
-              backgroundColor: colors.surface,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 10,
-              }}
-            >
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  backgroundColor: "#22c55e",
-                  flexShrink: 0,
-                }}
-              />
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.6,
-                  color: colors.muted,
-                }}
-              >
-                LIVE · Knowledge Graph
-              </span>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {props.liveTechRankings.slice(0, 10).map((item) => (
-                <span
-                  key={item.slug}
-                  style={{
-                    fontSize: 12,
-                    padding: "3px 10px",
-                    borderRadius: 999,
-                    backgroundColor: colors.surfaceAlt,
-                    color: colors.muted,
-                    border: `1px solid ${colors.border}`,
-                  }}
-                >
-                  {item.label}{" "}
-                  <span style={{ fontVariantNumeric: "tabular-nums" }}>
-                    {item.reposUsing} repos
-                  </span>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div
           style={{
