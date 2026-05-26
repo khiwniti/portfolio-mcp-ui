@@ -13,7 +13,14 @@
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index" }
+    { "source": "/mcp(.*)", "destination": "/api/index" },
+    { "source": "/mcp-apps(.*)", "destination": "/api/index" },
+    { "source": "/.well-known/(.*)", "destination": "/api/index" },
+    { "source": "/api/(.*)", "destination": "/api/index" }
+  ],
+  "routes": [
+    { "src": "^/$", "dest": "/public/index.html" },
+    { "src": "^/public/(.*)$", "dest": "/public/$1" }
   ],
   "headers": [
     {
