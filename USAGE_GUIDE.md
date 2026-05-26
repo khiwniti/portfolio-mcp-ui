@@ -2,7 +2,20 @@
 
 > The complete handbook for consuming `portfolio-mcp-ui` from any frontend, AI host, or backend.
 >
-> **Server identity:** `portfolio-mcp-ui` · **Tools:** 36 · **Widgets:** 30 · **Drill levels:** 4
+> **Server identity:** `portfolio-mcp-ui` · **Tools:** 54 · **Widgets:** 39 · **Drill levels:** 4 · **Knowledge graph:** Neo4j Aura · **Cloud sandboxes:** Vercel Sandbox
+>
+> **Last refresh:** 2026-05-26
+
+---
+
+## Pick your branch
+
+| Branch | Tools | What you get | Env vars required |
+|---|---|---|---|
+| `main` | **42** | 36 universal portfolio + 6 Vercel Sandbox. Zero external deps. | None (Sandbox tier is opt-in via `VERCEL_TOKEN`) |
+| `feature/knowledge-graph` | **54** | Everything in `main` plus 7 KG tools, 4 Sprint 4 tools, `get_oss_feed`, `kg_semantic_search`, plus `live*` enrichment on 9 fixture tools | Optional: `NEO4J_*` for graph backing, `GITHUB_TOKEN` for raised rate limits |
+
+This guide documents the **54-tool surface** (the `feature/knowledge-graph` branch). If you're on `main`, ignore sections 5a, 5b, the `live*` props, and the `kg_*` tool catalog — the rest of the guide applies verbatim.
 
 ---
 
@@ -18,7 +31,10 @@
    - 4.4 [Custom React frontend](#44-custom-react-frontend-mcp-use-client)
    - 4.5 [Claude API with `mcp_servers`](#45-claude-api-with-mcp_servers)
    - 4.6 [Direct HTTP / raw protocol](#46-direct-http--raw-protocol)
-5. [The 36-tool catalog](#5-the-36-tool-catalog)
+5. [The 54-tool catalog](#5-the-54-tool-catalog)
+   5a. [Knowledge graph tools](#5a-knowledge-graph-tools-7-tools)
+   5b. [Sprint 4/5 advanced tools](#5b-sprint-45--advanced-tools-5-tools)
+   5c. [Vercel Sandbox tools](#5c-vercel-sandbox-tools-6-tools)
 6. [Drill-down patterns](#6-drill-down-patterns)
 7. [Widget rendering contract](#7-widget-rendering-contract)
 8. [Common integration recipes](#8-common-integration-recipes)
@@ -42,8 +58,6 @@ It is two things at once:
 - **A reference architecture.** A working blueprint for any team that wants to expose a hierarchical content API as MCP rather than REST/GraphQL.
 
 There is no separate frontend required. The widgets are the frontend. Your job as an integrator is to (a) connect to the server, (b) call the right tool, (c) render the returned widget — or, if you prefer, ignore the widget and consume the `structuredContent` directly as JSON.
-
-Server runs on pure fixture data — no environment variables, no API keys, no databases required to start.
 
 ---
 
@@ -91,7 +105,7 @@ Every tool returns both. A graphical host (Claude Desktop, ChatGPT, the MCP Insp
 
 ### 3.4 Stateless, idempotent, side-effect-free (with one exception)
 
-34 of the 36 tools are pure reads. `submit_contact_message` is the only user-facing write. `track_event` is logged but has no observable side effect.
+47 of the 54 tools are pure reads. The 7 writes are: `submit_contact_message` (user-facing form), `save_draft` (protected by `DRAFTS_API_KEY`), `track_event` (logged but no observable side effect in v1), and four Vercel Sandbox lifecycle tools (`sandbox_create` / `sandbox_run` / `sandbox_write_files` / `sandbox_stop`). `kg_query` executes Cypher but read-only — write clauses are rejected at the parser layer.
 
 ---
 
@@ -105,7 +119,7 @@ Fastest way to explore the server. No code.
 
 1. Open the embedded Inspector in this sandbox, or visit any MCP Inspector instance.
 2. Connect to the server URL.
-3. Click **List Tools** — you should see 36 tools.
+3. Click **List Tools** — you should see 54 tools.
 4. Click any tool, fill the JSON args, hit **Call Tool**. The widget renders inline.
 
 Start with `get_hero` (no args), then click through the breadcrumbs of any drill-down widget.
@@ -132,7 +146,7 @@ Claude will discover the tools and chain `get_hero` → `get_projects` → `get_
 
 ### 4.3 ChatGPT (Apps SDK)
 
-In the ChatGPT app builder UI, add a new MCP connector pointing at the server URL. ChatGPT auto-discovers the 36 tools. Native widget rendering is supported by the Apps SDK.
+In the ChatGPT app builder UI, add a new MCP connector pointing at the server URL. ChatGPT auto-discovers the 54 tools. Native widget rendering is supported by the Apps SDK.
 
 ### 4.4 Custom React frontend (`mcp-use` client)
 
@@ -291,11 +305,11 @@ Use this for static-site generation: at build time, fetch every section, render 
 
 ---
 
-## 5. The 36-tool catalog
+## 5. The 54-tool catalog
 
 Every tool name links the call signature, what it returns, and what it drills into. All argument names are camelCase or snake_case depending on the tool — the schema is the source of truth (call `tools/list` to introspect).
 
-### 5.1 Level 1 — Section roots (12 tools)
+### 5.1 Level 1 — Section roots (9 tools)
 
 | Tool | Args | Returns | Drills into |
 |---|---|---|---|
@@ -308,11 +322,8 @@ Every tool name links the call signature, what it returns, and what it drills in
 | `get_open_source` | — | OSS contribution summary + grid | `get_oss_contribution` |
 | `get_education` | — | degrees + certifications grid | `get_education_item` |
 | `get_contact` | — | channels, FAQ link, quick-message form | `get_contact_channel`, `get_contact_faq`, `submit_contact_message` |
-| `get_portfolio_stats` | — | Aggregate counts across the whole portfolio | — |
-| `get_domains` | — | Portfolio domain/infrastructure metadata | — |
-| `list_posts` | `category?`, `tag?` | Blog/writing posts | — |
 
-### 5.2 Level 2 — Component details (13 tools)
+### 5.2 Level 2 — Component details (12 tools)
 
 | Tool | Args | Returns |
 |---|---|---|
@@ -324,13 +335,12 @@ Every tool name links the call signature, what it returns, and what it drills in
 | `get_role_detail` | `id` | Scope, impact metrics, decisions, achievements, stack, related projects |
 | `get_project_detail` | `id` | Full description, stack, team, timeline, changelog, related roles |
 | `get_project_metrics` | `id` | KPI dashboard + 6-point weekly time series |
-| `get_project_techstack` | `id` | All languages + frameworks for one project |
 | `get_oss_contribution` | `id` | PR/issue summary, repo, accepted/merged status, impact |
 | `get_education_item` | `id` | Single course/cert/degree with skills, transcript hints |
 | `get_contact_channel` | `id` | Single channel detail (handle, best-for, response time) |
 | `get_contact_faq` | — | FAQ list |
 
-### 5.3 Level 3 — Sub-components (7 tools)
+### 5.3 Level 3 — Sub-components (8 tools)
 
 | Tool | Args | Returns |
 |---|---|---|
@@ -338,25 +348,120 @@ Every tool name links the call signature, what it returns, and what it drills in
 | `get_language_stat` | `language` | Cross-portfolio stat card for one language (LOC, projects, years) |
 | `get_role_achievement` | `roleId`, `achId` | Achievement with metric and proof |
 | `get_role_decision` | `roleId`, `decId` | Decision / rationale / outcome breakdown |
-| `get_project_language_stat` | `id`, `language` | LOC, files, percentage for one language in one project |
+| `get_project_techstack` | `id` | All languages + frameworks for one project |
 | `get_contact_faq_item` | `id` | Single Q/A |
+| `list_posts` | `category?`, `tag?` | Blog/writing posts |
 | `search_content` | `query`, `section?` | Section-scoped search results |
 
-### 5.4 Level 4 — Primary source (1 tool)
+### 5.4 Level 4 — Primary source (2 tools)
 
 | Tool | Args | Returns |
 |---|---|---|
+| `get_project_language_stat` | `id`, `language` | LOC, files, percentage for one language in one project |
 | `get_project_module` | `id`, `modId` | Single module of a project — purpose, files, key APIs |
 
-### 5.5 Cross-cutting (3 tools)
+### 5.5 Cross-cutting (5 tools)
 
 | Tool | Args | Returns |
 |---|---|---|
+| `get_domains` | — | Portfolio domain/infrastructure metadata |
+| `get_portfolio_stats` | — | Aggregate counts across the whole portfolio |
 | `search_all` | `query`, `limit?` | Global search across all sections |
 | `track_event` | `eventName`, `section?`, `metadata?` | Analytics write (logged server-side) |
 | `submit_contact_message` | `name`, `email`, `message` | Confirmation widget with reference id |
 
+### 5a. Knowledge graph tools (7 tools)
+
+These tools query the live Neo4j Aura knowledge graph. When the graph is not configured they return a clear error message and `configured: false` — no other tool is affected.
+
+| Tool | Args | Returns |
+|---|---|---|
+| `kg_health` | none | Connectivity probe: node count, relationship count, server version, response time |
+| `kg_schema` | none | Labels with counts, relationship types, list of indexes (BTREE / FULLTEXT / VECTOR) |
+| `kg_person_overview` | none | Person node summary: repos authored, deployments owned, top languages aggregated |
+| `kg_skill_evidence` | `skill_name` | Technology node lookup + every repo using it (with GitHub URLs) |
+| `kg_search` | `query`, `label?`, `limit?` | Label-scoped substring search across Person / Repo / Technology / File nodes |
+| `kg_semantic_search` | `query`, `labels?`, `limit?` | Three-tier search: vector index → fulltext index → tokenised CONTAINS fallback. Response includes the tier used. |
+| `kg_query` | `cypher` (non-empty), `params?`, `limit?` | Execute a read-only Cypher query (write clauses rejected at parser layer) |
+
+**Live enrichment props** — 9 existing tools return an extra `live*` prop when Neo4j is reachable:
+
+| Tool | Live prop | What it adds |
+|---|---|---|
+| `get_hero_stats` | `liveSummary` | Person node, repo count, deployment count, top languages |
+| `get_skills` | `liveTechRankings` | Technology nodes ranked by repo-count |
+| `get_skill_detail` | `liveEvidence` | Technology node + list of repos using it |
+| `get_projects` | `liveStats` | Aggregate repo/deployment/language stats |
+| `get_project_detail` | `liveRepo` / `liveTechStack` | Repo node + tech relationships |
+| `get_project_techstack` | `liveTechStack` | Tech stack from graph edges |
+| `get_open_source` | `liveRepoCount` / `liveTopRepos` | Repo count + top repos by tech breadth |
+| `get_portfolio_stats` | `liveGraphStats` | Aggregate node/relationship counts |
+| `get_language_stat` | `liveEvidence` | Repos using the language, with GitHub URLs |
+
+The live prop is always `null` when the graph is unreachable — the rest of the response is unchanged.
+
+To enable live enrichment, add to your `.env`:
+```env
+NEO4J_URI=neo4j+s://<instance-id>.databases.neo4j.io
+NEO4J_USERNAME=<username>
+NEO4J_PASSWORD=<password>
+NEO4J_DATABASE=<database>
+# Optional — turns kg_semantic_search vector tier on
+OPENAI_API_KEY=sk-...
+```
+
+### 5b. Sprint 4/5 — Advanced tools (5 tools)
+
+These tools were added in Sprint 4 (live data ingestion) and Sprint 5 (AI-powered export + drafts).
+
+| Tool | Args | Auth | Returns |
+|---|---|---|---|
+| `get_resume_pdf` | `jobDescription` (≥10 chars), `format?` (`pdf`/`json`), `sections?` | Public | JD-keyword match score, matched/missing terms, tailored resume JSON |
+| `get_github_stats` | `username?` | Public | Live GitHub repo/language stats (15-min cached); falls back to fixture if API unreachable |
+| `get_drafts` | `apiKey?` | Protected (`DRAFTS_API_KEY` or Auth0 OAuth) | List of saved content drafts; returns `401` if unauthorised |
+| `save_draft` | `title`, `body`, `section?`, `tags?`, `apiKey?` | Protected | Create/update draft; returns saved draft with id and timestamp |
+| `get_oss_feed` | `limit?` (1–100, default 20) | Public | Live GitHub public events (PushEvent, PullRequestEvent, etc.) with repo links |
+
+**Environment variables required for full functionality:**
+
+```env
+# Sprint 4 — Live GitHub ingestion
+GITHUB_TOKEN=ghp_...            # Optional — increases rate limit from 60 to 5000 req/h
+GITHUB_USERNAME=your-username   # Default used by get_oss_feed and get_github_stats
+
+# Sprint 4 — OAuth-gated drafts (choose ONE of the two)
+DRAFTS_API_KEY=your-secret-key  # Simple shared-secret guard for get_drafts / save_draft
+# — or use Auth0 OAuth proxy —
+AUTH0_DOMAIN=<tenant>.auth0.com
+AUTH0_CLIENT_ID=...
+AUTH0_CLIENT_SECRET=...
+AUTH0_AUDIENCE=https://your-portfolio-api/
+```
+
 To get the canonical signature of any tool, call `tools/list` and read the `inputSchema`. The schemas are Zod-derived and authoritative.
+
+### 5c. Vercel Sandbox tools (6 tools)
+
+Opt-in cloud micro-VMs. The moment `VERCEL_TOKEN` / `VERCEL_TEAM_ID` / `VERCEL_PROJECT_ID` are set, all six tools come online. Without credentials, every tool returns a clean "not configured" widget or error — the other 48 tools remain unaffected.
+
+| Tool | Args | Side-effect | Returns |
+|---|---|---|---|
+| `sandbox_console` | none | Read | Registry dashboard widget: KPI cards (total / running / stopped / errored), per-sandbox cards, credential-health pill |
+| `sandbox_create` | `name?`, `gitUrl?`, `gitRevision?`, `tarballUrl?`, `ports?`, `runtime?` (`node22` / `python3.13`), `timeoutMs?`, `vcpus?` | **Write** — spawns a cloud VM | `sandbox-detail` widget with public URLs, vCPU info, "Stop sandbox" action button |
+| `sandbox_run` | `name`, `command`, `args?`, `env?`, `cwd?` | **Write** — executes inside the VM | `sandbox-command-result` widget with stdout/stderr panes, exit code, duration |
+| `sandbox_write_files` | `name`, `files` (`[{ path, content, mode? }]`) | **Write** — file system | Confirmation with per-file write status |
+| `sandbox_stop` | `name` | **Write** — idempotent VM stop | Confirmation; registry status updated to `"stopped"` |
+| `sandbox_status` | `name` | Read | Deep drill: metadata grid, public URLs per port, full reverse-chrono command log with collapsible output |
+
+**Environment variables required:**
+
+```env
+VERCEL_TOKEN=vcp_...                      # https://vercel.com/account/tokens (scope: full account)
+VERCEL_TEAM_ID=team_...                   # Settings → General → Team ID
+VERCEL_PROJECT_ID=prj_...                 # Project → Settings → General → Project ID
+```
+
+The in-memory sandbox registry is promoted to a `globalThis` singleton so it survives Vite HMR module reloads in development and warm-instance serverless cold starts in production.
 
 ---
 
@@ -597,19 +702,19 @@ All fixtures live at the top of `index.ts`. Look for these constants:
 
 Replace any value, keep the shape. The widgets are decoupled from content via Zod schemas, so as long as the shape matches, the widget will render.
 
-### 10.2 Swapping fixtures for a real source
+### 10.2 Wiring to a real backend
 
-The general pattern is to replace a fixture lookup with an async function. Inside each tool handler:
+Swap a fixture constant for an async function that queries your CMS, database, or knowledge graph. Inside each tool handler:
 
 ```typescript
 // Before
 const project = PROJECTS.find((p) => p.id === id);
 
 // After
-const project = await myContentSource.getProject(id);
+const project = await db.project.findUnique({ where: { id } });
 ```
 
-Tools are async — no other changes needed. Future v2 may ship adapter patterns for live data sources; v1 stays self-contained.
+Tools are async — no other changes needed.
 
 ### 10.3 Adding a new section
 
@@ -708,9 +813,6 @@ Yes — the `mcp-use` client is framework-agnostic; only the widget rendering la
 **Can I run this offline?**
 Yes — clone the repo, `npm install`, `npm run dev`. The server runs on `localhost:3000` with no external dependencies.
 
-**Does this need a database, API keys, or any external services?**
-No. The server runs entirely on bundled fixture data. No database, no API keys, no environment variables required — deploys anywhere that can run a Node process.
-
 **How do I deploy?**
 `npm run deploy` (one command) deploys to Manufact Cloud. See `references/foundations/deployment.md`.
 
@@ -749,7 +851,6 @@ Real. Uses `@modelcontextprotocol/sdk` under the hood via the `mcp-use` framewor
 | **Breadcrumb** | The ordered list of parent tools the current widget descended from |
 | **Sibling** | A peer of the current entity (e.g. other projects in the same tag, other skills in the same category) |
 | **Fixture** | Hardcoded data at the top of `index.ts` used as the content source in v1 |
-| **Response helper** | A utility that builds a `CallToolResult` with both `structuredContent` and a `ui-resource` block |
 
 ---
 

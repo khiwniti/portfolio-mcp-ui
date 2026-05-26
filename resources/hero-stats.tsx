@@ -31,6 +31,20 @@ const propsSchema = z.object({
   topLanguages: z.array(
     z.object({ name: z.string(), years: z.number() })
   ),
+  liveSummary: z
+    .object({
+      source: z.literal("kg"),
+      label: z.string(),
+      reposAuthored: z.number(),
+      deploymentsOwned: z.number(),
+      conversationsAuthored: z.number(),
+      topLanguages: z.array(
+        z.object({ language: z.string(), repoCount: z.number() })
+      ),
+      tookMs: z.number().optional(),
+    })
+    .nullable()
+    .optional(),
 });
 
 type Props = z.infer<typeof propsSchema>;
@@ -139,6 +153,148 @@ export default function HeroStats() {
             ))}
           </div>
         </div>
+
+        {props.liveSummary && (
+          <div
+            style={{
+              marginTop: 20,
+              padding: isMobile ? 12 : 14,
+              border: `1px solid ${c.accent}`,
+              borderRadius: 8,
+              backgroundColor: c.panel,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                flexWrap: "wrap",
+                marginBottom: 10,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  backgroundColor: c.accent,
+                  color: "#fff",
+                  fontWeight: 700,
+                  letterSpacing: 0.6,
+                }}
+              >
+                LIVE GRAPH
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                {props.liveSummary.label}
+              </span>
+              {props.liveSummary.tookMs != null && (
+                <span style={{ fontSize: 11, color: c.sub }}>
+                  ({props.liveSummary.tookMs}ms)
+                </span>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isMobile
+                  ? "1fr"
+                  : "repeat(3, minmax(0, 1fr))",
+                gap: isMobile ? 6 : 10,
+                marginBottom: props.liveSummary.topLanguages.length ? 12 : 0,
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: c.sub,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.4,
+                  }}
+                >
+                  Repos authored
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: c.accent }}>
+                  {props.liveSummary.reposAuthored}
+                </div>
+              </div>
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: c.sub,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.4,
+                  }}
+                >
+                  Deployments owned
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: c.accent }}>
+                  {props.liveSummary.deploymentsOwned}
+                </div>
+              </div>
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: c.sub,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.4,
+                  }}
+                >
+                  Conversations
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: c.accent }}>
+                  {props.liveSummary.conversationsAuthored}
+                </div>
+              </div>
+            </div>
+
+            {props.liveSummary.topLanguages.length > 0 && (
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: c.sub,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.4,
+                    marginBottom: 6,
+                  }}
+                >
+                  Top languages in graph
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: isMobile ? 6 : 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {props.liveSummary.topLanguages.slice(0, 8).map((lang) => (
+                    <div
+                      key={lang.language}
+                      style={{
+                        padding: "4px 10px",
+                        border: `1px solid ${c.border}`,
+                        borderRadius: 999,
+                        fontSize: isMobile ? 11 : 12,
+                        backgroundColor: c.bg,
+                      }}
+                    >
+                      <span style={{ fontWeight: 600 }}>{lang.language}</span>
+                      <span style={{ color: c.sub, marginLeft: 6 }}>
+                        {lang.repoCount}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </McpUseProvider>
   );

@@ -11,7 +11,9 @@
  * the entire MCP surface with no path-specific routing config.
  */
 import { handle } from "hono/vercel";
-import { app } from "../index.js";
+// NOTE: Vercel compiles/bundles this function. Import the source Hono app
+// directly so local `npm run build` (mcp-use/esbuild) can still resolve it.
+import { app } from "../index";
 
 export const config = {
   runtime: "nodejs",
