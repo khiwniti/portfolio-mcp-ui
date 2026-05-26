@@ -29,6 +29,27 @@
 
 ---
 
+## Branches & Variants
+
+This repo ships **two production branches** so consumers can pick the surface that fits their environment:
+
+| Branch | Tools | What's included | When to use |
+|---|---|---|---|
+| `main` | **42** | 36 universal portfolio + 6 Vercel Sandbox tools. Zero external dependencies — no Neo4j, no GitHub token, no API keys required. | You want a self-contained MCP UI surface that works the moment it's deployed. Sandbox tier activates the moment `VERCEL_TOKEN` is present. |
+| `feature/knowledge-graph` *(this branch)* | **54** | Everything in `main` **plus** 7 Neo4j knowledge-graph tools, 4 Sprint 4 tools (resume export, GitHub stats, drafts, save), `get_oss_feed`, and `kg_semantic_search`. Live enrichment props (`live*`) wired into 9 fixture tools. | You want the full HR-grade portfolio with live graph backing. Needs Neo4j Aura credentials; degrades gracefully when absent. |
+
+Both branches deploy identically to Vercel or Manufact Cloud. The 36 universal portfolio tools are bit-for-bit identical across branches.
+
+```bash
+# Universal (default for new consumers)
+git clone -b main https://github.com/khiwniti/portfolio-mcp-ui.git
+
+# Full knowledge-graph build (this branch)
+git clone -b feature/knowledge-graph https://github.com/khiwniti/portfolio-mcp-ui.git
+```
+
+---
+
 ## Why this exists
 
 > *Every portfolio is a static page. This one is a **protocol surface**.*
@@ -176,7 +197,8 @@ https://<project>.vercel.app/mcp
 | `vercel.json` | Routes every request to `/api/index`, sets 60s `maxDuration` and 1024 MB memory, opens CORS on `/mcp` and `/.well-known/*`, hardens headers. |
 | `api/index.ts` | The Vercel function. Wraps `server.app` (the underlying Hono instance) with `handle()` from `hono/vercel`. |
 | `index.ts` | Guards `server.listen()` behind `!process.env.VERCEL` so the same source runs on Vercel, Manufact Cloud, Docker, or `node dist/index.js` without forks. |
-| `lib/graph-v4.ts` | Neo4j Aura adapter. Reads credentials via `getEnv()` (disk-based fallback for HMR). All public functions fail silently when KG is not configured. |
+| `lib/graph-v5.ts` | Neo4j Aura adapter. Reads credentials via `getEnv()` (disk-based fallback for HMR). All public functions fail silently when KG is not configured. |
+| `lib/sandbox-final.ts` | Vercel Sandbox adapter. `globalThis`-backed registry survives HMR reloads; credential-aware lifecycle helpers wrap `@vercel/sandbox`. |
 
 ### Plug it into Claude Desktop
 

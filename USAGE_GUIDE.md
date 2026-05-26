@@ -3,6 +3,19 @@
 > The complete handbook for consuming `portfolio-mcp-ui` from any frontend, AI host, or backend.
 >
 > **Server identity:** `portfolio-mcp-ui` · **Tools:** 54 · **Widgets:** 39 · **Drill levels:** 4 · **Knowledge graph:** Neo4j Aura · **Cloud sandboxes:** Vercel Sandbox
+>
+> **Last refresh:** 2026-05-26
+
+---
+
+## Pick your branch
+
+| Branch | Tools | What you get | Env vars required |
+|---|---|---|---|
+| `main` | **42** | 36 universal portfolio + 6 Vercel Sandbox. Zero external deps. | None (Sandbox tier is opt-in via `VERCEL_TOKEN`) |
+| `feature/knowledge-graph` | **54** | Everything in `main` plus 7 KG tools, 4 Sprint 4 tools, `get_oss_feed`, `kg_semantic_search`, plus `live*` enrichment on 9 fixture tools | Optional: `NEO4J_*` for graph backing, `GITHUB_TOKEN` for raised rate limits |
+
+This guide documents the **54-tool surface** (the `feature/knowledge-graph` branch). If you're on `main`, ignore sections 5a, 5b, the `live*` props, and the `kg_*` tool catalog — the rest of the guide applies verbatim.
 
 ---
 

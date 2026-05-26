@@ -2,11 +2,14 @@
 ## Sprint-by-Sprint Implementation for khiw.dev
 
 **Status**: Ready for integration  
-**MCP Server**: `portfolio-mcp-ui` (54 tools, 39 widgets)  
+**MCP Server**: `portfolio-mcp-ui` (54 tools, 39 widgets) on branch `feature/knowledge-graph`  
 **Endpoint**: `https://fast-pulse-37yfv.run.mcp-use.com/mcp`  
-**Timeline**: 5 sprints, 95 hours
+**Timeline**: 5 sprints, 95 hours  
+**Last refresh**: 2026-05-26
 
 ---
+
+> **Branch note.** This guide targets the `feature/knowledge-graph` branch (**54 tools**). If you cloned `main` you'll see only **42 tools** — the 36 universal portfolio tools plus the 6 Vercel Sandbox tools, with no KG / Sprint 4/5 surface. Both branches share the same 36 portfolio tools bit-for-bit, so Sprint 1 tasks (data migration) work identically against either.
 
 > **Status update (2026-05-26):** The MCP server is live with **54 tools and 39 widgets** across five capability tiers:
 > - **36 universal portfolio tools** — fixture-only, zero external dependencies, always available
