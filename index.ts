@@ -6093,18 +6093,19 @@ server.tool(
 // we must NOT call `listen()`. The `VERCEL` env var is set automatically in
 // both build and runtime environments on Vercel.
 if (!process.env.VERCEL) {
-  const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-  console.log(`Portfolio MCP server running on port ${PORT}`);
-  server.listen(PORT);
+ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+ console.log(`Portfolio MCP server running on port ${PORT}`);
+ server.listen(PORT);
 }
 
 // Mount MCP Apps endpoint (/mcp-apps) onto the existing Hono app.
 // This keeps the original mcp-use /mcp endpoint intact.
+// Lazy initialization: create transport per-request for Vercel serverless compat.
 server.app.all("/mcp-apps", async (c: any) => {
-  const transport = new WebStandardStreamableHTTPServerTransport();
-  const appsServer = getAppsServer();
-  await appsServer.connect(transport);
-  return transport.handleRequest(c.req.raw);
+ const appsServerInstance = getAppsServer();
+ const appsTransport = new WebStandardStreamableHTTPServerTransport();
+ await appsServerInstance.connect(appsTransport);
+ return appsTransport.handleRequest(c.req.raw);
 });
 
 // Export the Hono app + server instance so adapter entries (api/index.ts on
