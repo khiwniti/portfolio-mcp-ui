@@ -6098,14 +6098,38 @@ if (!process.env.VERCEL) {
  server.listen(PORT);
 }
 
+// Root landing page ("mask") so the domain looks like a normal site.
+// Note: vercel.json rewrites all paths to /api/index, so this must be served by Hono.
+// We read the built public/index.html from dist/public at runtime.
+let _landingHtmlCache: string | null = null;
+async function getLandingHtml() {
+  if (_landingHtmlCache) return _landingHtmlCache;
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const projectRoot = path.resolve(here, "..");
+  const htmlPath = path.join(projectRoot, "dist/public/index.html");
+  _landingHtmlCache = await readFile(htmlPath, "utf-8");
+  return _landingHtmlCache;
+}
+
+server.app.get("/", async (c: any) => {
+  try {
+    const html = await getLandingHtml();
+    c.header("content-type", "text/html; charset=utf-8");
+    return c.body(html);
+  } catch (e: any) {
+    // Fallback: keep the MCP server usable even if landing page isn't present.
+    return c.text("Portfolio MCP server. Try /mcp or /mcp-apps.", 200);
+  }
+});
+
 // Mount MCP Apps endpoint (/mcp-apps) onto the existing Hono app.
 // This keeps the original mcp-use /mcp endpoint intact.
 // Lazy initialization: create transport per-request for Vercel serverless compat.
 server.app.all("/mcp-apps", async (c: any) => {
- const appsServerInstance = getAppsServer();
- const appsTransport = new WebStandardStreamableHTTPServerTransport();
- await appsServerInstance.connect(appsTransport);
- return appsTransport.handleRequest(c.req.raw);
+  const appsServerInstance = getAppsServer();
+  const appsTransport = new WebStandardStreamableHTTPServerTransport();
+  await appsServerInstance.connect(appsTransport);
+  return appsTransport.handleRequest(c.req.raw);
 });
 
 // Export the Hono app + server instance so adapter entries (api/index.ts on
