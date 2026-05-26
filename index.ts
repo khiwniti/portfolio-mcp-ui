@@ -1,5 +1,13 @@
 import { MCPServer, widget, text, error, object, oauthProxy, jwksVerifier } from "mcp-use/server";
 import { z } from "zod";
+
+// MCP Apps (ext-apps) dual-mode compat surface
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import {
   sandboxConfigured,
   createSandbox,
@@ -80,24 +88,168 @@ const server = new MCPServer({
 /* ------------------------------------------------------------------ */
 
 const heroData = {
-  name: "Alex Kim",
-  headline: "Full-stack engineer building developer tools for AI agents.",
+  name: "Ikkyu",
+  headline: "AI-Augmented Full-Stack Developer",
   subhead:
-    "I design and ship systems that pair production-grade engineering with the new agentic UX layer — from MCP servers to evaluation pipelines and embeddable interactive widgets.",
-  location: "Available · Remote · Singapore (GMT+8)",
-  tagline: "Currently exploring agent-native UI surfaces.",
-  ctas: [
-    { label: "See my work", href: "#projects", primary: true },
-    { label: "Resume (PDF)", href: "/resume.pdf", primary: false },
-    { label: "Email me", href: "#contact", primary: false },
+    "Today I work at the intersection of AI agent architecture, engineering simulation, and Thai government digital transformation. I've shipped 50+ projects on Vercel and 47 Cloudflare Workers across 9 industries — from weather forecasting with NVIDIA FourCastNet to BIM carbon calculators and restaurant BI.",
+  location: "Bangkok, Thailand (GMT+7)",
+  availability: "Available",
+  tagline: "AI Agent Architect",
+  stats: [
+    { value: "29", label: "Live" },
+    { value: "50", label: "Projects" },
+    { value: "47", label: "Workers" },
+    { value: "9", label: "Industries" },
   ],
-  highlights: [
-    "8+ years shipping production software",
-    "Led platform teams at 2 Series-B startups",
-    "Open-source maintainer · 4k+ stars",
-    "Comfortable end-to-end: infra → product",
+  chips: ["LangGraph", "Claude Sonnet", "Qwen3", "MCP", "FastAPI", "Next.js", "TypeScript", "Cloudflare"],
+  links: [
+    { label: "GitHub", href: "https://github.com/getintheQ" },
+    { label: "LinkedIn", href: "https://linkedin.com/in/getintheq" },
+    { label: "Email", href: "mailto:kiw.brw@gmail.com" },
+    { label: "Resume", href: "https://www.khiw.dev/api/resume" },
   ],
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MCP Apps (ext-apps) — dual-mode compat surface
+// We keep the existing mcp-use /mcp endpoint intact, and add /mcp-apps using
+// the official TS SDK + ext-apps server helpers.
+// Start small: one app tool + one app resource.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const HERO_APP_URI = "ui://portfolio/hero-app";
+const EXPECTATION_APP_URI = "ui://portfolio/expectation-app";
+
+function getAppsServer() {
+  const s = new McpServer({ name: "portfolio-mcp-ui-apps", version: "1.0.0" });
+
+  registerAppResource(
+    s,
+    "Portfolio Hero App",
+    HERO_APP_URI,
+    { description: "Interactive hero section (MCP Apps)" },
+    async () => {
+      // When built, this file runs from dist/index.js, so import.meta.url points
+      // at ./dist. Resolve project root to find dist-apps/.
+      const here = path.dirname(fileURLToPath(import.meta.url));
+      const projectRoot = path.resolve(here, "..");
+      const htmlPath = path.join(projectRoot, "dist-apps/hero-app/index.html");
+      const html = await readFile(htmlPath, "utf-8");
+
+      return {
+        contents: [
+          {
+            uri: HERO_APP_URI,
+            mimeType: RESOURCE_MIME_TYPE,
+            text: html,
+            _meta: {
+              ui: {
+                csp: {
+                  resourceDomains: [
+                    "https://fonts.googleapis.com",
+                    "https://fonts.gstatic.com",
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      };
+    }
+  );
+
+  registerAppTool(
+    s,
+    "get_hero_app",
+    {
+      title: "Get Hero (App)",
+      description: "Returns hero data and renders an interactive MCP App view.",
+      _meta: {
+        ui: {
+          resourceUri: HERO_APP_URI,
+          visibility: ["app", "model"],
+        },
+      },
+    },
+    async () => {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `${heroData.name} — ${heroData.headline}`,
+          },
+        ],
+        structuredContent: heroData,
+      };
+    }
+  );
+
+  // Layout-first "expectation" app: section order + component positioning aligned
+  // with ./ecpectation_web.jsx (full-page experience).
+  registerAppResource(
+    s,
+    "Portfolio Expectation App",
+    EXPECTATION_APP_URI,
+    { description: "Layout-first portfolio (MCP Apps) aligned to expectation_web" },
+    async () => {
+      const here = path.dirname(fileURLToPath(import.meta.url));
+      const projectRoot = path.resolve(here, "..");
+      const htmlPath = path.join(projectRoot, "dist-apps/expectation-app/index.html");
+      const html = await readFile(htmlPath, "utf-8");
+
+      return {
+        contents: [
+          {
+            uri: EXPECTATION_APP_URI,
+            mimeType: RESOURCE_MIME_TYPE,
+            text: html,
+            _meta: {
+              ui: {
+                csp: {
+                  resourceDomains: [
+                    "https://fonts.googleapis.com",
+                    "https://fonts.gstatic.com",
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      };
+    }
+  );
+
+  registerAppTool(
+    s,
+    "get_expectation_app",
+    {
+      title: "Get Expectation Layout (App)",
+      description:
+        "Returns a full-page MCP App whose layout/component positions align with the expectation_web reference.",
+      _meta: {
+        ui: {
+          resourceUri: EXPECTATION_APP_URI,
+          visibility: ["app", "model"],
+        },
+      },
+    },
+    async () => {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Expectation layout app (layout-first).",
+          },
+        ],
+        structuredContent: {
+          hero: heroData,
+        },
+      };
+    }
+  );
+
+  return s;
+}
 
 const availabilityData = {
   status: "available" as const,
@@ -5945,6 +6097,15 @@ if (!process.env.VERCEL) {
   console.log(`Portfolio MCP server running on port ${PORT}`);
   server.listen(PORT);
 }
+
+// Mount MCP Apps endpoint (/mcp-apps) onto the existing Hono app.
+// This keeps the original mcp-use /mcp endpoint intact.
+server.app.all("/mcp-apps", async (c: any) => {
+  const transport = new WebStandardStreamableHTTPServerTransport();
+  const appsServer = getAppsServer();
+  await appsServer.connect(transport);
+  return transport.handleRequest(c.req.raw);
+});
 
 // Export the Hono app + server instance so adapter entries (api/index.ts on
 // Vercel, custom Workers/Bun runtimes, tests) can consume them without
