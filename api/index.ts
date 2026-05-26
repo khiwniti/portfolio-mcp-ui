@@ -11,15 +11,26 @@
  * the entire MCP surface with no path-specific routing config.
  */
 import { handle } from "hono/vercel";
-// NOTE: Vercel compiles/bundles this function. Import the source Hono app
-// directly so local `npm run build` (mcp-use/esbuild) can still resolve it.
-import { app } from "../index";
+
+// IMPORTANT (Vercel/serverless): mcp-use mounts /mcp, /.well-known/*, widgets, and inspector
+// ONLY when you call server.listen() OR server.getHandler().
+// In Vercel we don't call listen(), so we must call getHandler() once at cold start
+// to mount routes onto server.app before requests arrive.
+import { server } from "../index";
 
 export const config = {
   runtime: "nodejs",
-  // MCP responses can stream; 60s covers the longest realistic tool invocation
-  // including ones that emit progress notifications.
-  maxDuration: 60,
+  // MCP responses can stream; 60s covers the longest realistic tool invocation.
+  maxDuration: 60
 };
 
-export default handle(app);
+// On Vercel we want the production/serverless mounting path.
+// NOTE: mcp-use uses NODE_ENV to decide dev vs prod widget mounting.
+const prepare = server.getHandler({ provider: "vercel" });
+const baseHandler = handle(server.app);
+
+// hono/vercel's handle() returns a Fetch-style handler (Request -> Response)
+export default async function vercelHandler(req: Request) {
+  await prepare;
+  return baseHandler(req);
+}
