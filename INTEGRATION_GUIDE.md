@@ -2,15 +2,21 @@
 ## Sprint-by-Sprint Implementation for khiw.dev
 
 **Status**: Ready for integration  
-**MCP Server**: `portfolio-mcp-ui` (48 tools, 36 widgets)  
+**MCP Server**: `portfolio-mcp-ui` (54 tools, 39 widgets)  
 **Endpoint**: `https://fast-pulse-37yfv.run.mcp-use.com/mcp`  
 **Timeline**: 5 sprints, 95 hours
 
 ---
 
-> **Status update (2026-05-25):** The MCP server is live with 48 tools and 36 widgets, connected to a live Neo4j Aura knowledge graph (222k nodes, 241k relationships). Sprints 1–4 are fully implemented server-side (including JD-tailored resume export, live GitHub ingestion, OAuth-gated drafts, and semantic KG search). Sprint 5 UI integration requires work in the `khiw.console v3` repository.
+> **Status update (2026-05-26):** The MCP server is live with **54 tools and 39 widgets** across five capability tiers:
+> - **36 universal portfolio tools** — fixture-only, zero external dependencies, always available
+> - **7 Knowledge Graph tools** — Neo4j Aura backed (222k nodes, 241k relationships), graceful degradation
+> - **5 Sprint 4/5 advanced tools** — JD resume export, live GitHub ingestion, OAuth-gated drafts
+> - **6 Vercel Sandbox tools** — opt-in cloud micro-VMs for live code demos and per-recruiter spin-ups
+>
+> Sprints 1–4 are fully implemented server-side. Sprint 5 UI integration requires work in the `khiw.console v3` repository.
 
-## Overview: The 48 Tools
+## Overview: The 54 Tools
 
 ### Tier 1 — Section Renderers (6 tools, top-level)
 All return interactive widgets that can be embedded directly:
@@ -42,16 +48,38 @@ For search, domain lookups, analytics:
 - `search_all(query, limit?)` — global search
 - `track_event(eventName, section?, metadata?)` — analytics
 
-### Tier 4 — Knowledge Graph Tools (6 live-graph tools)
+### Tier 4 — Knowledge Graph Tools (7 live-graph tools)
 
-These tools query the live Neo4j Aura instance (`resume-knowladge-graph`). All are optional — the server runs and all 42 portfolio tools respond with fixture data whether or not the graph is connected.
+These tools query the live Neo4j Aura instance (`resume-knowladge-graph`). All are optional — the server runs and the 36 universal portfolio tools respond with fixture data whether or not the graph is connected.
 
-- `kg_health` — connectivity check with node/relationship counts
-- `kg_schema` — labels, relationship types, and property keys
+- `kg_health` — connectivity check with node/relationship counts and server version
+- `kg_schema` — labels with counts, relationship types, list of indexes (BTREE / FULLTEXT / VECTOR)
 - `kg_person_overview` — Person node summary (repos, deployments, languages)
 - `kg_skill_evidence(skill_name)` — Technology node + repos using it
-- `kg_query(cypher)` — read-only Cypher execution (non-empty string required)
-- `kg_overview` — full graph dashboard widget (node clusters, top tech, repo stats)
+- `kg_search(query, label?, limit?)` — label-scoped substring search across Person / Repo / Technology / File nodes
+- `kg_semantic_search(query, labels?, limit?)` — three-tier search: vector index → fulltext index → tokenised CONTAINS fallback
+- `kg_query(cypher, params?, limit?)` — read-only Cypher execution (write clauses rejected at parser layer)
+
+### Tier 5 — Sprint 4/5 Advanced Tools (5 tools)
+
+- `get_resume_pdf(jobDescription, format?, sections?)` — JD-keyword scoring and tailored resume JSON
+- `get_github_stats(username?)` — 15-minute cached GitHub repo/language stats
+- `get_drafts(apiKey?)` — protected reads of saved drafts (Auth0 OAuth or `DRAFTS_API_KEY`)
+- `save_draft(title, body, section?, tags?, apiKey?)` — protected write
+- `get_oss_feed(limit?)` — live GitHub public events (PushEvent, PRs, issues, releases)
+
+### Tier 6 — Vercel Sandbox Tools (6 opt-in cloud micro-VMs)
+
+These tools come online when `VERCEL_TOKEN` / `VERCEL_TEAM_ID` / `VERCEL_PROJECT_ID` are configured. Without credentials, every sandbox tool returns a clean "not configured" widget — no other tier is affected.
+
+- `sandbox_console` — registry dashboard (KPI cards, per-sandbox history, credential health)
+- `sandbox_create(name?, gitUrl?, gitRevision?, tarballUrl?, ports?, runtime?, timeoutMs?, vcpus?)` — spawn a cloud VM with optional git clone source
+- `sandbox_run(name, command, args?, env?, cwd?)` — execute shell commands inside a sandbox
+- `sandbox_write_files(name, files)` — bulk file writes with optional POSIX mode
+- `sandbox_stop(name)` — idempotent shutdown
+- `sandbox_status(name)` — full command log with stdout/stderr and exposed-port public URLs
+
+The in-memory sandbox registry is a `globalThis` singleton so it survives Vite HMR cycles in development and warm-instance reuse in serverless production.
 
 **Live enrichment on existing tools** — 9 of the 36 portfolio tools now return a `live*` prop when the graph is reachable:
 
@@ -67,13 +95,33 @@ These tools query the live Neo4j Aura instance (`resume-knowladge-graph`). All a
 | `get_portfolio_stats` | `liveGraphStats` | 222k nodes, 241k relationships |
 | `get_language_stat` | `liveEvidence` | Repos using the language with GitHub URLs |
 
-Set these environment variables to activate live enrichment (Vercel dashboard → Settings → Environment Variables):
-```
+Set these environment variables to activate the optional tiers (Vercel dashboard → Settings → Environment Variables):
+
+```env
+# Tier 4 — Knowledge Graph (Neo4j Aura)
 NEO4J_URI=neo4j+s://<instance>.databases.neo4j.io
 NEO4J_USERNAME=<username>
 NEO4J_PASSWORD=<password>
 NEO4J_DATABASE=<database>
+OPENAI_API_KEY=sk-...                # optional — turns kg_semantic_search vector tier on
+
+# Tier 5 — Sprint 4/5 advanced tools
+GITHUB_TOKEN=ghp_...                 # optional — raises GitHub rate limit from 60 to 5000 req/hour
+GITHUB_USERNAME=<username>           # default user for get_oss_feed and get_github_stats
+DRAFTS_API_KEY=<secret>              # shared-secret guard for get_drafts / save_draft
+# — or use Auth0 OAuth proxy instead —
+AUTH0_DOMAIN=<tenant>.auth0.com
+AUTH0_CLIENT_ID=...
+AUTH0_CLIENT_SECRET=...
+AUTH0_AUDIENCE=https://your-portfolio-api/
+
+# Tier 6 — Vercel Sandbox
+VERCEL_TOKEN=vcp_...                 # https://vercel.com/account/tokens
+VERCEL_TEAM_ID=team_...              # Settings → General → Team ID
+VERCEL_PROJECT_ID=prj_...            # Project → Settings → General → Project ID
 ```
+
+**None of these are required.** The 36 universal portfolio tools always work with zero environment configuration.
 
 ---
 

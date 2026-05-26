@@ -12,7 +12,7 @@
 
 ### A career told in tools, not pages.
 
-**48 typed tools · 36 interactive widgets · 4-level drill · Neo4j live knowledge graph · zero static HTML**
+**54 typed tools · 39 interactive widgets · 4-level drill · Neo4j live knowledge graph · Vercel Sandbox built-in · zero static HTML**
 
 [![MCP](https://img.shields.io/badge/MCP-0.10.0-9333ea?style=for-the-badge&logo=anthropic&logoColor=white)](https://modelcontextprotocol.io)
 [![mcp-use](https://img.shields.io/badge/mcp--use-latest-22c55e?style=for-the-badge&logo=node.js&logoColor=white)](https://mcp-use.com)
@@ -23,7 +23,7 @@
 
 <sub>built with `mcp-use` · powered by `Hono` · rendered by `React 19` · enriched by `Neo4j Aura` · validated by `Zod`</sub>
 
-[**Quick Start**](#-quick-start) · [**Deploy**](#-deploy-to-vercel) · [**Tool Catalog**](#-the-48-tool-hierarchy) · [**Knowledge Graph**](#-live-knowledge-graph-enrichment) · [**Architecture**](#-architecture) · [**Integrate**](#-integration-recipes) · [**Docs**](#-docs)
+[**Quick Start**](#-quick-start) · [**Deploy**](#-deploy-to-vercel) · [**Tool Catalog**](#the-54-tool-hierarchy) · [**Knowledge Graph**](#-live-knowledge-graph-enrichment) · [**Vercel Sandbox**](#vercel-sandbox-6-tools) · [**Architecture**](#-architecture) · [**Integrate**](#-integration-recipes) · [**Docs**](#-docs)
 
 </div>
 
@@ -68,13 +68,13 @@ On top of the fixture layer, a live **Neo4j Aura** knowledge graph with 222 k no
 <tr>
 <td width="33%" valign="top">
 
-### 48 typed tools
+### 54 typed tools
 Every section, sub-section, primary source, write-back, knowledge graph query, GitHub ingestion, and drafts surface as a Zod-validated MCP tool. Tool registry auto-generated to `.mcp-use/tool-registry.d.ts` — full autocomplete in any consumer.
 
 </td>
 <td width="33%" valign="top">
 
-### 36 responsive widgets
+### 39 responsive widgets
 React 19 + theme-aware, mobile/tablet/desktop adaptive via a JS-based `useViewport()` hook, `McpUseProvider autoSize`. Cross-link via `sendFollowUpMessage` so the AI can drill deeper from inside a widget.
 
 </td>
@@ -258,7 +258,7 @@ Restart Claude. Ask: *"call get_projects and show me edge-stream's metrics dashb
 
 ---
 
-## The 48-tool hierarchy
+## The 54-tool hierarchy
 
 ### Level 1 — Section roots (9 tools)
 
@@ -321,16 +321,34 @@ Restart Claude. Ask: *"call get_projects and show me edge-stream's metrics dashb
 | `track_event(event, section?, metadata?)` | analytics write-back |
 | `submit_contact_message(name, email, message)` | validated write-back → confirmation widget |
 
-### Knowledge graph (6 tools)
+### Knowledge graph (7 tools)
+
+Backed by a live Neo4j Aura instance — gracefully degrades when `NEO4J_*` env vars are absent.
 
 | Tool | Returns |
 |---|---|
-| `kg_overview` | graph dashboard: node/relationship counts, top technologies, repo clusters — widget: `kg-overview` |
-| `kg_person_summary` | Person node summary: repos, deployments, language breakdown |
-| `kg_tech_rankings` | all Technology nodes ranked by repo-usage count |
-| `kg_repo_detail(slug)` | single Repo node: tech stack, deployment count, linked files |
-| `kg_top_repos(limit?)` | top repos by technology breadth |
-| `kg_search(kg_query)` | execute a read-only Cypher query against the Aura instance |
+| `kg_health` | connection probe — node count, relationship count, server version, response time |
+| `kg_schema` | labels with counts, relationship types, list of indexes (BTREE / FULLTEXT / VECTOR) |
+| `kg_person_overview` | Person node: authored repos, deployments owned, top languages aggregated across the graph |
+| `kg_skill_evidence(skill)` | Technology node lookup + every repo using it, with GitHub URLs |
+| `kg_search(query, label?, limit?)` | label-scoped substring search across Person / Repo / Technology / File nodes |
+| `kg_semantic_search(query, label?, limit?)` | three-tier search — vector index → fulltext index → tokenised CONTAINS fallback |
+| `kg_query(cypher, params?, limit?)` | execute a read-only Cypher query (write clauses rejected at the parser layer) |
+
+### Vercel Sandbox (6 tools)
+
+Opt-in cloud micro-VMs — activate the moment `VERCEL_TOKEN` / `VERCEL_TEAM_ID` / `VERCEL_PROJECT_ID` are set. Without credentials, every sandbox tool returns a clean "not configured" widget or error rather than crashing.
+
+| Tool | Returns |
+|---|---|
+| `sandbox_console` | registry dashboard: KPI cards (total / running / stopped / errored), per-sandbox cards with last-3 commands, credential-health pill — widget: `sandbox-console` |
+| `sandbox_create(name?, gitUrl?, gitRevision?, tarballUrl?, ports?, runtime?, timeoutMs?, vcpus?)` | spawns a new cloud VM, optionally clones a git source, exposes ports, returns the `sandbox-detail` widget with public URLs |
+| `sandbox_run(name, command, args?, env?, cwd?)` | runs a shell command inside the sandbox — widget renders stdout/stderr in terminal style with exit code + duration chips |
+| `sandbox_write_files(name, files)` | bulk file write into a sandbox with optional POSIX `mode` per file |
+| `sandbox_stop(name)` | idempotent stop — updates registry status to `"stopped"` |
+| `sandbox_status(name)` | deep drill: metadata grid, public URLs per exposed port, full reverse-chrono command log with collapsible output |
+
+> The in-memory sandbox registry is promoted to a `globalThis` singleton so it survives Vite HMR module reloads and serverless cold starts within the same warm function instance.
 
 ---
 
@@ -457,13 +475,15 @@ Full recipe library lives in **[USAGE_GUIDE.md](./USAGE_GUIDE.md)** and integrat
 
 ```
 portfolio-mcp-ui/
-├── index.ts                     # 48 tools, fixtures, MCPServer init
+├── index.ts                     # 54 tools, fixtures, MCPServer init, Auth0 wiring
 ├── lib/
-│   └── graph-v4.ts              # Neo4j Aura adapter (graceful degradation)
+│   ├── graph-v5.ts              # Neo4j Aura adapter (graceful degradation)
+│   ├── github-v2.ts             # cached GitHub API client (graceful, optional token)
+│   └── sandbox-final.ts         # Vercel Sandbox adapter + globalThis registry
 ├── api/
 │   └── index.ts                 # Vercel handler — wraps server.app via hono/vercel
 ├── vercel.json                  # routes, headers, CORS, function config
-├── resources/                   # 31 React widgets, fully responsive
+├── resources/                   # 39 React widgets, fully responsive
 │   ├── hero-section.tsx
 │   ├── projects-showcase.tsx
 │   ├── project-detail.tsx
@@ -471,7 +491,11 @@ portfolio-mcp-ui/
 │   ├── project-language-stat.tsx
 │   ├── project-module.tsx
 │   ├── kg-overview.tsx          # Knowledge graph dashboard widget
-│   ├── … 24 more
+│   ├── kg-search-results.tsx
+│   ├── sandbox-console.tsx      # Vercel Sandbox registry widget
+│   ├── sandbox-detail.tsx
+│   ├── sandbox-command-result.tsx
+│   ├── … 25 more
 │   └── contact-confirmation.tsx
 ├── public/                      # favicon, icon
 ├── README.md                    # you are here
@@ -496,15 +520,23 @@ curl -sX POST http://localhost:3000/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
   | jq '.result.tools | length'
-# → 48
+# → 54
 
 # confirm KG enrichment (requires .env with valid credentials)
 curl -sX POST http://localhost:3000/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
-       "params":{"name":"kg_overview","arguments":{}}}' \
+       "params":{"name":"kg_health","arguments":{}}}' \
   | jq '.result.structuredContent.configured'
 # → true  (or false if .env is absent — graceful)
+
+# confirm Vercel Sandbox health (requires VERCEL_TOKEN / TEAM_ID / PROJECT_ID)
+curl -sX POST http://localhost:3000/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"sandbox_console","arguments":{}}}' \
+  | jq '.result.structuredContent.configured'
+# → true  (or false if env vars absent — graceful)
 ```
 
 ---
@@ -548,16 +580,20 @@ curl -sX POST http://localhost:3000/mcp \
 
 ## Roadmap
 
-- [x] 36-tool hierarchy across 4 drill levels
-- [x] 6 knowledge graph tools (`kg_overview`, `kg_person_summary`, `kg_tech_rankings`, `kg_repo_detail`, `kg_top_repos`, `kg_search`)
+- [x] 36-tool universal portfolio hierarchy across 4 drill levels
+- [x] 7 knowledge graph tools (`kg_health`, `kg_schema`, `kg_query`, `kg_person_overview`, `kg_skill_evidence`, `kg_search`, `kg_semantic_search`)
 - [x] Live Neo4j Aura enrichment on 9 existing tools (graceful degradation)
-- [x] 36 fully responsive widgets (mobile / tablet / desktop via `useViewport()`)
+- [x] 6 Vercel Sandbox tools (`sandbox_create`, `sandbox_run`, `sandbox_write_files`, `sandbox_stop`, `sandbox_status`, `sandbox_console`)
+- [x] 39 fully responsive widgets (mobile / tablet / desktop via `useViewport()`)
 - [x] Vercel one-click deploy via `hono/vercel` adapter
 - [x] Integration handbook + sprint roadmap docs
 - [x] JD-tailored resume PDF export (`get_resume_pdf`)
 - [x] OAuth-gated drafts surface (`get_drafts` / `save_draft` via Auth0 proxy)
 - [x] Live GitHub ingestion (`get_github_stats` / `get_oss_feed`)
-- [x] Full-text KG search with vector embeddings (`kg_semantic_search`)
+- [x] Three-tier semantic KG search — vector → fulltext → CONTAINS fallback
+- [ ] Real-time availability calendar sync (Google Calendar / Cal.com)
+- [ ] GitHub webhook live OSS contribution feed
+- [ ] khiw.console v3 frontend wiring (Sprints 1–5 of `INTEGRATION_GUIDE.md`)
 
 ---
 

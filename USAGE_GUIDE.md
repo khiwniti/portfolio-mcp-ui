@@ -2,7 +2,7 @@
 
 > The complete handbook for consuming `portfolio-mcp-ui` from any frontend, AI host, or backend.
 >
-> **Server identity:** `portfolio-mcp-ui` · **Tools:** 48 · **Widgets:** 36 · **Drill levels:** 4
+> **Server identity:** `portfolio-mcp-ui` · **Tools:** 54 · **Widgets:** 39 · **Drill levels:** 4 · **Knowledge graph:** Neo4j Aura · **Cloud sandboxes:** Vercel Sandbox
 
 ---
 
@@ -18,8 +18,10 @@
    - 4.4 [Custom React frontend](#44-custom-react-frontend-mcp-use-client)
    - 4.5 [Claude API with `mcp_servers`](#45-claude-api-with-mcp_servers)
    - 4.6 [Direct HTTP / raw protocol](#46-direct-http--raw-protocol)
-5. [The 48-tool catalog](#5-the-48-tool-catalog)
-   5a. [Knowledge graph tools](#5a-knowledge-graph-tools)
+5. [The 54-tool catalog](#5-the-54-tool-catalog)
+   5a. [Knowledge graph tools](#5a-knowledge-graph-tools-7-tools)
+   5b. [Sprint 4/5 advanced tools](#5b-sprint-45--advanced-tools-5-tools)
+   5c. [Vercel Sandbox tools](#5c-vercel-sandbox-tools-6-tools)
 6. [Drill-down patterns](#6-drill-down-patterns)
 7. [Widget rendering contract](#7-widget-rendering-contract)
 8. [Common integration recipes](#8-common-integration-recipes)
@@ -90,7 +92,7 @@ Every tool returns both. A graphical host (Claude Desktop, ChatGPT, the MCP Insp
 
 ### 3.4 Stateless, idempotent, side-effect-free (with one exception)
 
-45 of the 48 tools are pure reads. `submit_contact_message` is the only user-facing write. `track_event` is logged but has no observable side effect in v1. `save_draft` is a protected write (requires `DRAFTS_API_KEY`); `kg_query` executes read-only Cypher.
+47 of the 54 tools are pure reads. The 7 writes are: `submit_contact_message` (user-facing form), `save_draft` (protected by `DRAFTS_API_KEY`), `track_event` (logged but no observable side effect in v1), and four Vercel Sandbox lifecycle tools (`sandbox_create` / `sandbox_run` / `sandbox_write_files` / `sandbox_stop`). `kg_query` executes Cypher but read-only — write clauses are rejected at the parser layer.
 
 ---
 
@@ -104,7 +106,7 @@ Fastest way to explore the server. No code.
 
 1. Open the embedded Inspector in this sandbox, or visit any MCP Inspector instance.
 2. Connect to the server URL.
-3. Click **List Tools** — you should see 48 tools.
+3. Click **List Tools** — you should see 54 tools.
 4. Click any tool, fill the JSON args, hit **Call Tool**. The widget renders inline.
 
 Start with `get_hero` (no args), then click through the breadcrumbs of any drill-down widget.
@@ -131,7 +133,7 @@ Claude will discover the tools and chain `get_hero` → `get_projects` → `get_
 
 ### 4.3 ChatGPT (Apps SDK)
 
-In the ChatGPT app builder UI, add a new MCP connector pointing at the server URL. ChatGPT auto-discovers the 48 tools. Native widget rendering is supported by the Apps SDK.
+In the ChatGPT app builder UI, add a new MCP connector pointing at the server URL. ChatGPT auto-discovers the 54 tools. Native widget rendering is supported by the Apps SDK.
 
 ### 4.4 Custom React frontend (`mcp-use` client)
 
@@ -290,7 +292,7 @@ Use this for static-site generation: at build time, fetch every section, render 
 
 ---
 
-## 5. The 48-tool catalog
+## 5. The 54-tool catalog
 
 Every tool name links the call signature, what it returns, and what it drills into. All argument names are camelCase or snake_case depending on the tool — the schema is the source of truth (call `tools/list` to introspect).
 
@@ -355,49 +357,19 @@ Every tool name links the call signature, what it returns, and what it drills in
 | `track_event` | `eventName`, `section?`, `metadata?` | Analytics write (logged server-side) |
 | `submit_contact_message` | `name`, `email`, `message` | Confirmation widget with reference id |
 
-### 5b. Sprint 4/5 — Advanced tools (6 tools)
+### 5a. Knowledge graph tools (7 tools)
 
-These tools were added in Sprint 4 (live data ingestion) and Sprint 5 (AI-powered export + drafts).
-
-| Tool | Args | Auth | Returns |
-|---|---|---|---|
-| `get_resume_pdf` | `jobDescription` (≥10 chars), `format?` (`pdf`/`json`), `sections?` | Public | JD-keyword match score, matched/missing terms, tailored resume JSON |
-| `get_github_stats` | `username?` | Public | Live GitHub repo/language stats (15-min cached); falls back to fixture if API unreachable |
-| `get_drafts` | `apiKey?` | Protected (`DRAFTS_API_KEY`) | List of saved content drafts; returns `401` if key missing or wrong |
-| `save_draft` | `title`, `body`, `section?`, `tags?`, `apiKey?` | Protected | Create/update draft; returns saved draft with id and timestamp |
-| `get_oss_feed` | `limit?` (1–100, default 20) | Public | Live GitHub public events (PushEvent, PullRequestEvent, etc.) with repo links |
-| `kg_semantic_search` | `query`, `labels?`, `limit?` | Public | 3-tier search: OpenAI vector → fulltext index → substring. Returns matching nodes with type, name, properties |
-
-**Environment variables required for full functionality:**
-
-```env
-# Sprint 4 — Live GitHub ingestion
-GITHUB_TOKEN=ghp_...            # Optional — increases rate limit from 60 to 5000 req/h
-GITHUB_USERNAME=your-username   # Default used by get_oss_feed and get_github_stats
-
-# Sprint 4 — OAuth-gated drafts
-DRAFTS_API_KEY=your-secret-key  # Required for get_drafts / save_draft
-
-# Sprint 5 — Vector search
-OPENAI_API_KEY=sk-...           # Enables vector embeddings in kg_semantic_search
-```
-
-When `OPENAI_API_KEY` is absent, `kg_semantic_search` falls back to Neo4j fulltext index, then to CONTAINS substring matching. Results are always returned — the tier used is indicated in the response.
-
-To get the canonical signature of any tool, call `tools/list` and read the `inputSchema`. The schemas are Zod-derived and authoritative.
-
-### 5a. Knowledge graph tools (6 tools)
-
-These tools query the live Neo4j Aura knowledge graph. When the graph is not configured they return a clear error message — no other tool is affected.
+These tools query the live Neo4j Aura knowledge graph. When the graph is not configured they return a clear error message and `configured: false` — no other tool is affected.
 
 | Tool | Args | Returns |
 |---|---|---|
-| `kg_overview` | none | Graph dashboard widget: node/rel counts, top technologies, repo clusters |
-| `kg_health` | none | Connectivity check: node count, relationship count, response time |
-| `kg_schema` | none | Node labels, relationship types, property keys present in the graph |
-| `kg_person_overview` | none | Person node summary: repos authored, deployments owned, top languages |
-| `kg_skill_evidence` | `skill_name` | Technology node + repos that USES the technology |
-| `kg_query` | `cypher` (non-empty string) | Execute a read-only Cypher query; returns rows as JSON array |
+| `kg_health` | none | Connectivity probe: node count, relationship count, server version, response time |
+| `kg_schema` | none | Labels with counts, relationship types, list of indexes (BTREE / FULLTEXT / VECTOR) |
+| `kg_person_overview` | none | Person node summary: repos authored, deployments owned, top languages aggregated |
+| `kg_skill_evidence` | `skill_name` | Technology node lookup + every repo using it (with GitHub URLs) |
+| `kg_search` | `query`, `label?`, `limit?` | Label-scoped substring search across Person / Repo / Technology / File nodes |
+| `kg_semantic_search` | `query`, `labels?`, `limit?` | Three-tier search: vector index → fulltext index → tokenised CONTAINS fallback. Response includes the tier used. |
+| `kg_query` | `cypher` (non-empty), `params?`, `limit?` | Execute a read-only Cypher query (write clauses rejected at parser layer) |
 
 **Live enrichment props** — 9 existing tools return an extra `live*` prop when Neo4j is reachable:
 
@@ -421,7 +393,62 @@ NEO4J_URI=neo4j+s://<instance-id>.databases.neo4j.io
 NEO4J_USERNAME=<username>
 NEO4J_PASSWORD=<password>
 NEO4J_DATABASE=<database>
+# Optional — turns kg_semantic_search vector tier on
+OPENAI_API_KEY=sk-...
 ```
+
+### 5b. Sprint 4/5 — Advanced tools (5 tools)
+
+These tools were added in Sprint 4 (live data ingestion) and Sprint 5 (AI-powered export + drafts).
+
+| Tool | Args | Auth | Returns |
+|---|---|---|---|
+| `get_resume_pdf` | `jobDescription` (≥10 chars), `format?` (`pdf`/`json`), `sections?` | Public | JD-keyword match score, matched/missing terms, tailored resume JSON |
+| `get_github_stats` | `username?` | Public | Live GitHub repo/language stats (15-min cached); falls back to fixture if API unreachable |
+| `get_drafts` | `apiKey?` | Protected (`DRAFTS_API_KEY` or Auth0 OAuth) | List of saved content drafts; returns `401` if unauthorised |
+| `save_draft` | `title`, `body`, `section?`, `tags?`, `apiKey?` | Protected | Create/update draft; returns saved draft with id and timestamp |
+| `get_oss_feed` | `limit?` (1–100, default 20) | Public | Live GitHub public events (PushEvent, PullRequestEvent, etc.) with repo links |
+
+**Environment variables required for full functionality:**
+
+```env
+# Sprint 4 — Live GitHub ingestion
+GITHUB_TOKEN=ghp_...            # Optional — increases rate limit from 60 to 5000 req/h
+GITHUB_USERNAME=your-username   # Default used by get_oss_feed and get_github_stats
+
+# Sprint 4 — OAuth-gated drafts (choose ONE of the two)
+DRAFTS_API_KEY=your-secret-key  # Simple shared-secret guard for get_drafts / save_draft
+# — or use Auth0 OAuth proxy —
+AUTH0_DOMAIN=<tenant>.auth0.com
+AUTH0_CLIENT_ID=...
+AUTH0_CLIENT_SECRET=...
+AUTH0_AUDIENCE=https://your-portfolio-api/
+```
+
+To get the canonical signature of any tool, call `tools/list` and read the `inputSchema`. The schemas are Zod-derived and authoritative.
+
+### 5c. Vercel Sandbox tools (6 tools)
+
+Opt-in cloud micro-VMs. The moment `VERCEL_TOKEN` / `VERCEL_TEAM_ID` / `VERCEL_PROJECT_ID` are set, all six tools come online. Without credentials, every tool returns a clean "not configured" widget or error — the other 48 tools remain unaffected.
+
+| Tool | Args | Side-effect | Returns |
+|---|---|---|---|
+| `sandbox_console` | none | Read | Registry dashboard widget: KPI cards (total / running / stopped / errored), per-sandbox cards, credential-health pill |
+| `sandbox_create` | `name?`, `gitUrl?`, `gitRevision?`, `tarballUrl?`, `ports?`, `runtime?` (`node22` / `python3.13`), `timeoutMs?`, `vcpus?` | **Write** — spawns a cloud VM | `sandbox-detail` widget with public URLs, vCPU info, "Stop sandbox" action button |
+| `sandbox_run` | `name`, `command`, `args?`, `env?`, `cwd?` | **Write** — executes inside the VM | `sandbox-command-result` widget with stdout/stderr panes, exit code, duration |
+| `sandbox_write_files` | `name`, `files` (`[{ path, content, mode? }]`) | **Write** — file system | Confirmation with per-file write status |
+| `sandbox_stop` | `name` | **Write** — idempotent VM stop | Confirmation; registry status updated to `"stopped"` |
+| `sandbox_status` | `name` | Read | Deep drill: metadata grid, public URLs per port, full reverse-chrono command log with collapsible output |
+
+**Environment variables required:**
+
+```env
+VERCEL_TOKEN=vcp_...                      # https://vercel.com/account/tokens (scope: full account)
+VERCEL_TEAM_ID=team_...                   # Settings → General → Team ID
+VERCEL_PROJECT_ID=prj_...                 # Project → Settings → General → Project ID
+```
+
+The in-memory sandbox registry is promoted to a `globalThis` singleton so it survives Vite HMR module reloads in development and warm-instance serverless cold starts in production.
 
 ---
 
