@@ -6098,7 +6098,18 @@ if (!process.env.VERCEL) {
  server.listen(PORT);
 }
 
-// Root landing page ("mask") so the domain looks like a normal site.
+// Serve frontend HTML at root
+server.app.get("/", async (c: any) => {
+ const fs = await import("node:fs/promises");
+ const path = await import("node:path");
+ const here = path.dirname(fileURLToPath(import.meta.url));
+ const projectRoot = path.resolve(here, "..");
+ const htmlPath = path.join(projectRoot, "public", "index.html");
+ const html = await fs.readFile(htmlPath, "utf-8");
+ return c.html(html);
+});
+
+// Mount MCP Apps endpoint (/mcp-apps) onto the existing Hono app.
 // Note: vercel.json rewrites all paths to /api/index, so this must be served by Hono.
 // We read the built public/index.html from dist/public at runtime.
 let _landingHtmlCache: string | null = null;

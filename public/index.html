@@ -1,220 +1,486 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ikkyu — Portfolio MCP Server</title>
-    <meta name="description" content="Portfolio MCP server (mcp-use + MCP Apps) with tools, widgets, and UI resources." />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio MCP Inspector | Ikkyu</title>
     <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      :root {
-        --bg: #0a0a0f;
-        --panel: #12121a;
-        --panel2: #1a1a2e;
-        --text: #ffffff;
-        --muted: #a0a0b0;
-        --a1: #6366f1;
-        --a2: #8b5cf6;
-        --a3: #d946ef;
-        --glow: rgba(99, 102, 241, 0.28);
-      }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-        background: var(--bg);
-        color: var(--text);
-        min-height: 100vh;
-        overflow-x: hidden;
-      }
-      .bg {
-        position: fixed;
-        inset: 0;
-        z-index: -1;
-        background:
-          radial-gradient(circle at 20% 50%, rgba(99,102,241,0.16) 0%, transparent 55%),
-          radial-gradient(circle at 80% 20%, rgba(139,92,246,0.14) 0%, transparent 55%),
-          radial-gradient(circle at 40% 85%, rgba(217,70,239,0.12) 0%, transparent 55%);
-        filter: saturate(1.2);
-        animation: drift 18s ease-in-out infinite;
-      }
-      @keyframes drift {
-        0%, 100% { transform: scale(1); opacity: 0.55; }
-        50% { transform: scale(1.08); opacity: 0.85; }
-      }
-      .wrap {
-        max-width: 1100px;
-        margin: 0 auto;
-        padding: 56px 24px;
-      }
-      header { text-align: center; margin-bottom: 36px; }
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 16px;
-        border-radius: 999px;
-        border: 1px solid rgba(99,102,241,0.8);
-        background: rgba(26,26,46,0.7);
-        color: var(--a1);
-        font-weight: 600;
-        box-shadow: 0 0 18px var(--glow);
-      }
-      h1 {
-        font-size: 56px;
-        font-weight: 900;
-        margin: 16px 0 12px;
-        line-height: 1.05;
-        background: linear-gradient(135deg, var(--a1), var(--a2), var(--a3));
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
-      }
-      .sub {
-        font-size: 18px;
-        color: var(--muted);
-        line-height: 1.7;
-        max-width: 760px;
-        margin: 0 auto;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 16px;
-        margin: 30px 0 10px;
-      }
-      .card {
-        background: rgba(18,18,26,0.85);
-        border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 16px;
-        padding: 18px;
-        transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
-      }
-      .card:hover {
-        transform: translateY(-3px);
-        border-color: rgba(99,102,241,0.7);
-        box-shadow: 0 14px 34px rgba(0,0,0,0.35);
-      }
-      .k { font-size: 34px; font-weight: 800; margin-bottom: 8px; }
-      .v { color: var(--muted); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; }
-      .features {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        gap: 16px;
-        margin: 22px 0 26px;
-      }
-      .feat h3 { font-size: 16px; margin-bottom: 8px; }
-      .feat p { color: var(--muted); line-height: 1.65; font-size: 14px; }
-      .cta {
-        display: flex;
-        gap: 12px;
-        justify-content: center;
-        flex-wrap: wrap;
-        margin-top: 18px;
-      }
-      a.btn {
-        text-decoration: none;
-        padding: 12px 16px;
-        border-radius: 10px;
-        font-weight: 700;
-        border: 1px solid rgba(255,255,255,0.10);
-        background: rgba(26,26,46,0.6);
-        color: var(--text);
-      }
-      a.btn.primary {
-        border: 0;
-        background: linear-gradient(135deg, var(--a1), var(--a2));
-        box-shadow: 0 10px 24px var(--glow);
-      }
-      a.btn:hover { filter: brightness(1.06); }
-      .endpoints {
-        margin-top: 26px;
-        text-align: center;
-        color: var(--muted);
-        font-size: 13px;
-      }
-      code {
-        background: rgba(255,255,255,0.06);
-        border: 1px solid rgba(255,255,255,0.08);
-        padding: 3px 7px;
-        border-radius: 8px;
-        color: rgba(255,255,255,0.92);
-      }
-      footer {
-        margin-top: 38px;
-        text-align: center;
-        color: rgba(160,160,176,0.75);
-        font-size: 12px;
-        border-top: 1px solid rgba(255,255,255,0.06);
-        padding-top: 18px;
-      }
-      @media (max-width: 640px) {
-        h1 { font-size: 38px; }
-        .wrap { padding: 40px 18px; }
-      }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a2e;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b0;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.3);
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        .bg-gradient {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: 
+                radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 40% 80%, rgba(217, 70, 239, 0.15) 0%, transparent 50%);
+            z-index: -1;
+            animation: gradientShift 20s ease-in-out infinite;
+        }
+        @keyframes gradientShift {
+            0%, 100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+        }
+        header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--bg-tertiary);
+            padding: 1.5rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6, #d946ef);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .status-bar {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-tertiary);
+            border-radius: 9999px;
+            font-size: 0.85rem;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--warning);
+            animation: pulse 2s infinite;
+        }
+        .status-dot.ready { background: var(--success); }
+        .status-dot.error { background: var(--error); }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+        main {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .hero {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        .hero h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6, #d946ef);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .hero p {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--bg-tertiary);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        .card:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px var(--accent-glow);
+        }
+        .card h3 {
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .card p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+        .card .icon {
+            font-size: 1.5rem;
+        }
+        .tool-list {
+            background: var(--bg-secondary);
+            border: 1px solid var(--bg-tertiary);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .tool-list h3 {
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .tool-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 0.75rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .tool-item {
+            background: var(--bg-tertiary);
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+        .tool-item:hover {
+            border-color: var(--accent);
+            background: rgba(99, 102, 241, 0.1);
+        }
+        .tool-item.selected {
+            border-color: var(--accent);
+            background: rgba(99, 102, 241, 0.2);
+        }
+        .inspector {
+            background: var(--bg-secondary);
+            border: 1px solid var(--bg-tertiary);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .inspector h3 {
+            margin-bottom: 1rem;
+        }
+        .inspector-output {
+            background: var(--bg-primary);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.9rem;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: white;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--bg-tertiary);
+        }
+        .btn-secondary:hover {
+            border-color: var(--accent);
+        }
+        .actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        .endpoint-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            background: var(--accent);
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 0.5rem;
+        }
+        .loading {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid var(--text-secondary);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+            border-top: 1px solid var(--bg-tertiary);
+            margin-top: 3rem;
+        }
     </style>
-  </head>
-  <body>
-    <div class="bg"></div>
-    <div class="wrap">
-      <header>
-        <div class="pill">Portfolio MCP Server</div>
-        <h1>Ikkyu</h1>
-        <p class="sub">
-          This domain serves a Model Context Protocol (MCP) server (mcp-use) plus an MCP Apps surface.
-          Use the endpoints below to connect from clients or agent runtimes.
+</head>
+<body>
+    <div class="bg-gradient"></div>
+    
+    <header>
+        <div class="header-content">
+            <div class="logo">🔍 Portfolio MCP Inspector</div>
+            <div class="status-bar">
+                <div class="status-indicator">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Checking...</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="hero">
+            <h1>Agent Guide & Inspector</h1>
+            <p>Interactive dashboard for exploring and testing all MCP tools, widgets, and endpoints in real-time.</p>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h3><span class="icon">🤖</span> MCP Tools</h3>
+                <p>54+ tools for AI agent interactions, knowledge graph queries, and portfolio data access.</p>
+                <div class="endpoint-badge">/mcp</div>
+            </div>
+            <div class="card">
+                <h3><span class="icon">🎨</span> MCP Apps</h3>
+                <p>Interactive UI resources and widgets rendered as HTML fragments.</p>
+                <div class="endpoint-badge">/mcp-apps</div>
+            </div>
+            <div class="card">
+                <h3><span class="icon">📊</span> Knowledge Graph</h3>
+                <p>Neo4j-powered career knowledge graph with 47 repos and 9 industries.</p>
+                <div class="endpoint-badge">kg_*</div>
+            </div>
+            <div class="card">
+                <h3><span class="icon">⚡</span> Real-time Stats</h3>
+                <p>Live GitHub statistics, project metrics, and development activity.</p>
+                <div class="endpoint-badge">github_*</div>
+            </div>
+        </div>
+
+        <div class="tool-list">
+            <h3><span class="icon">🛠️</span> Tool Registry <span id="toolCount" style="color: var(--text-secondary); font-size: 0.9rem; margin-left: 0.5rem;">(loading...)</span></h3>
+            <div class="tool-grid" id="toolGrid">
+                <!-- Tools will be populated dynamically -->
+            </div>
+        </div>
+
+        <div class="inspector">
+            <h3><span class="icon">🔬</span> Inspector Output</h3>
+            <div class="actions">
+                <button class="btn btn-primary" onclick="testToolsList()">Test Tools List</button>
+                <button class="btn btn-secondary" onclick="testResourcesList()">Test Resources</button>
+                <button class="btn btn-secondary" onclick="clearOutput()">Clear</button>
+            </div>
+            <div class="inspector-output" id="output">// Click a tool or button above to inspect its output...</div>
+        </div>
+
+        <div class="grid" style="margin-top: 2rem;">
+            <div class="card">
+                <h3><span class="icon">📚</span> Documentation</h3>
+                <p style="margin-bottom: 1rem;">Full API documentation and usage examples.</p>
+                <a href="/.well-known/mcp" class="btn btn-secondary" style="text-decoration: none; display: inline-block;">View Docs →</a>
+            </div>
+            <div class="card">
+                <h3><span class="icon">🔧</span> Configuration</h3>
+                <p style="margin-bottom: 1rem;">MCP server configuration and discovery.</p>
+                <a href="/.well-known/mcp.json" class="btn btn-secondary" style="text-decoration: none; display: inline-block;">View Config →</a>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <p>© 2026 Ikkyu. Built with MCP, Neo4j, and ❤️</p>
+        <p style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.7;">
+            Endpoints: /mcp | /mcp-apps | /.well-known/mcp
         </p>
-      </header>
+    </footer>
 
-      <section class="grid" aria-label="highlights">
-        <div class="card">
-          <div class="k">54+</div>
-          <div class="v">Tools</div>
-        </div>
-        <div class="card">
-          <div class="k">39</div>
-          <div class="v">Widgets</div>
-        </div>
-        <div class="card">
-          <div class="k">2</div>
-          <div class="v">MCP Apps</div>
-        </div>
-        <div class="card">
-          <div class="k">Neo4j</div>
-          <div class="v">Knowledge graph</div>
-        </div>
-      </section>
+    <script>
+        const MCP_URL = window.location.origin;
+        let selectedTool = null;
 
-      <section class="features" aria-label="features">
-        <div class="card feat">
-          <h3>MCP endpoint</h3>
-          <p>Primary JSON-RPC endpoint served by mcp-use (tools, resources, widgets, well-known discovery).</p>
-        </div>
-        <div class="card feat">
-          <h3>MCP Apps endpoint</h3>
-          <p>Dual-mode compat surface using the official TypeScript SDK + ext-apps resources.</p>
-        </div>
-        <div class="card feat">
-          <h3>UI resources</h3>
-          <p>Embeddable UI fragments and widgets intended to be consumed by MCP-capable clients.</p>
-        </div>
-        <div class="card feat">
-          <h3>Production deploy</h3>
-          <p>Designed for Vercel: single serverless function + deterministic build.</p>
-        </div>
-      </section>
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            checkStatus();
+            loadTools();
+        });
 
-      <div class="cta" aria-label="actions">
-        <a class="btn primary" href="/mcp">Open /mcp</a>
-        <a class="btn" href="/mcp-apps">Open /mcp-apps</a>
-        <a class="btn" href="/.well-known/mcp">Open /.well-known/mcp</a>
-      </div>
+        async function checkStatus() {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            
+            try {
+                const response = await fetch(`${MCP_URL}/.well-known/mcp.json`);
+                if (response.ok) {
+                    statusDot.className = 'status-dot ready';
+                    statusText.textContent = 'Server Ready';
+                } else {
+                    throw new Error('Server returned ' + response.status);
+                }
+            } catch (error) {
+                statusDot.className = 'status-dot error';
+                statusText.textContent = 'Server Error';
+                console.error('Status check failed:', error);
+            }
+        }
 
-      <div class="endpoints">
-        Endpoints: <code>/mcp</code> &nbsp; <code>/mcp-apps</code> &nbsp; <code>/.well-known/mcp</code>
-      </div>
+        async function loadTools() {
+            const output = document.getElementById('output');
+            const toolGrid = document.getElementById('toolGrid');
+            const toolCount = document.getElementById('toolCount');
+            
+            output.textContent = '// Loading tool registry...';
+            
+            try {
+                const response = await fetch(`${MCP_URL}/mcp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 1,
+                        method: 'tools/list',
+                        params: {}
+                    })
+                });
 
-      <footer>
-        &copy; 2026 Ikkyu — served by Vercel
-      </footer>
-    </div>
-  </body>
+                const data = await response.json();
+                
+                if (data.result && data.result.tools) {
+                    const tools = data.result.tools;
+                    toolCount.textContent = `(${tools.length} tools)`;
+                    toolGrid.innerHTML = '';
+                    
+                    tools.forEach((tool, index) => {
+                        const toolEl = document.createElement('div');
+                        toolEl.className = 'tool-item';
+                        toolEl.textContent = tool.name;
+                        toolEl.onclick = () => selectTool(tool, toolEl);
+                        toolGrid.appendChild(toolEl);
+                    });
+
+                    output.textContent = `// Loaded ${tools.length} tools successfully.\n// Click on any tool to see details or test it.`;
+                } else {
+                    throw new Error('Invalid response format');
+                }
+            } catch (error) {
+                output.textContent = `// Error loading tools:\n// ${error.message}`;
+                console.error('Load tools failed:', error);
+            }
+        }
+
+        function selectTool(tool, element) {
+            // Remove previous selection
+            document.querySelectorAll('.tool-item').forEach(el => el.classList.remove('selected'));
+            
+            // Add selection
+            element.classList.add('selected');
+            selectedTool = tool;
+            
+            const output = document.getElementById('output');
+            output.textContent = `// Selected tool: ${tool.name}\n// Description: ${tool.description || 'No description'}\n//\n// Click "Test Tools List" to invoke this tool`;
+        }
+
+        async function testToolsList() {
+            const output = document.getElementById('output');
+            output.textContent = '// Testing tools/list...';
+            
+            try {
+                const response = await fetch(`${MCP_URL}/mcp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 2,
+                        method: 'tools/list',
+                        params: {}
+                    })
+                });
+
+                const data = await response.json();
+                output.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                output.textContent = `// Error: ${error.message}`;
+            }
+        }
+
+        async function testResourcesList() {
+            const output = document.getElementById('output');
+            output.textContent = '// Testing resources/list...';
+            
+            try {
+                const response = await fetch(`${MCP_URL}/mcp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 3,
+                        method: 'resources/list',
+                        params: {}
+                    })
+                });
+
+                const data = await response.json();
+                output.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                output.textContent = `// Error: ${error.message}`;
+            }
+        }
+
+        function clearOutput() {
+            document.getElementById('output').textContent = '// Output cleared. Click a tool or button to inspect.';
+        }
+    </script>
+</body>
 </html>
