@@ -386,7 +386,11 @@
             try {
                 const response = await fetch(`${MCP_URL}/mcp`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // mcp-use Streamable HTTP requires the client to accept BOTH JSON + SSE
+                        'Accept': 'application/json, text/event-stream'
+                    },
                     body: JSON.stringify({
                         jsonrpc: '2.0',
                         id: 1,
@@ -439,7 +443,11 @@
             try {
                 const response = await fetch(`${MCP_URL}/mcp`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // mcp-use Streamable HTTP requires the client to accept BOTH JSON + SSE
+                        'Accept': 'application/json, text/event-stream'
+                    },
                     body: JSON.stringify({
                         jsonrpc: '2.0',
                         id: 2,
@@ -462,7 +470,11 @@
             try {
                 const response = await fetch(`${MCP_URL}/mcp`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // mcp-use Streamable HTTP requires the client to accept BOTH JSON + SSE
+                        'Accept': 'application/json, text/event-stream'
+                    },
                     body: JSON.stringify({
                         jsonrpc: '2.0',
                         id: 3,

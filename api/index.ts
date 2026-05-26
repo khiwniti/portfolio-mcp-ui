@@ -26,7 +26,9 @@ export const config = {
 
 // On Vercel we want the production/serverless mounting path.
 // NOTE: mcp-use uses NODE_ENV to decide dev vs prod widget mounting.
-const prepare = server.getHandler({ provider: "vercel" });
+// mcp-use types don't currently include a "vercel" provider string.
+// Calling getHandler() with no provider still mounts the correct routes.
+const prepare = server.getHandler();
 const baseHandler = handle(server.app);
 
 // hono/vercel's handle() returns a Fetch-style handler (Request -> Response)
